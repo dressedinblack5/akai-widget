@@ -1,0 +1,10 @@
+build/
+*.user
+*.pro.user
+CMakeUserPresets.json
+.cache/
+.DS_Store
+Thumbs.db
+node_modules/
+__pycache__/
+*.pyc

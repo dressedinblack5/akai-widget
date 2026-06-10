@@ -1,0 +1,24 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Id": "akai-chat",
+        "Name": "akai-chat",
+        "Description": "Chatbot widget powered by Opencode",
+        "Icon": "system-run",
+        "Version": "1.0",
+        "License": "GPL-2.0+",
+        "Authors": [
+            {
+                "Name": "User",
+                "Email": ""
+            }
+        ],
+        "Category": "Utilities",
+        "ServiceTypes": [
+            "Plasma/Applet"
+        ]
+    },
+    "X-Plasma-API": "declarativeappletscript",
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-MainScript": "ui/main.qml"
+}

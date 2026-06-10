@@ -1,0 +1,8 @@
+[     579ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:4096/session?directory=%EF%BF%BDZ%1Bj&roots=true&limit=55:0
+[    1189ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:4096/session?directory=%EF%BF%BDZ%1Bj&roots=true:0
+[    1190ms] [ERROR] Failed to load sessions Error: Unexpected server error. Check server logs for details.
+    at UK (http://localhost:4096/assets/index-DC0DaFR5.js:2371:49408)
+    at o (http://localhost:4096/assets/index-DC0DaFR5.js:2371:7514)
+    at async VY (http://localhost:4096/assets/index-DC0DaFR5.js:2376:18916) @ http://localhost:4096/assets/index-DC0DaFR5.js:2376
+[  149890ms] [INFO] Autofocus processing was blocked because a document already has a focused element. @ http://localhost:4096/L2hvbWUvZHJlc3NlZGluYmxhY2sv77-9Whtqeu-_vSLvv70/session/ses_14cea4a08ffetJofVhiP7IOkpD:0
+[  593814ms] [INFO] Autofocus processing was blocked because a document already has a focused element. @ http://localhost:4096/L2hvbWUvZHJlc3NlZGluYmxhY2sv77-9Whtqeu-_vSLvv70/session/ses_14cea4a08ffetJofVhiP7IOkpD:0
