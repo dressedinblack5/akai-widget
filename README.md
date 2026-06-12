@@ -14,9 +14,9 @@ A compact AI chat widget for the KDE Plasma 6 desktop, powered by Opencode.
 ./install.sh
 ```
 
-Right-click panel > Add Widgets > AKAI Chat
+Right-click panel > Add Widgets > AKAI Widget
 
-Or test with `plasmoidviewer -a akai-chat`
+Or test with `plasmoidviewer -a akai-widget`
 
 ## Requirements
 

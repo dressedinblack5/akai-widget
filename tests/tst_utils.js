@@ -1,179 +1,135 @@
-#!/usr/bin/env node
-// Unit tests for utils.js — pure JS, no Qt dependency
 const fs = require("fs");
 const path = require("path");
+const vm = require("vm");
 
-const utilsPath = path.resolve(
-  __dirname,
-  "../package/contents/ui/utils.js",
+const utilsCode = fs.readFileSync(
+  path.join(__dirname, "../package/contents/ui/utils.js"),
+  "utf8"
 );
-const utilsCode = fs.readFileSync(utilsPath, "utf8");
-eval(utilsCode);
 
-let pass = 0;
-let fail = 0;
+const ctx = {};
+vm.createContext(ctx);
+vm.runInContext(utilsCode, ctx);
 
-function test(name, fn) {
-  try {
-    fn();
-    pass++;
-  } catch (e) {
-    fail++;
-    console.log("  FAIL:", name, "-", e.message);
+const { buildModelList, buildModelListFromConfig } = ctx;
+
+let passed = 0;
+let failed = 0;
+
+function assert(condition, msg) {
+  if (condition) {
+    passed++;
+  } else {
+    failed++;
+    console.error("FAIL: " + msg);
   }
 }
 
-function compare(a, b) {
-  if (a !== b)
-    throw new Error("expected " + JSON.stringify(b) + " got " + JSON.stringify(a));
+function assertEq(actual, expected, msg) {
+  if (JSON.stringify(actual) === JSON.stringify(expected)) {
+    passed++;
+  } else {
+    failed++;
+    console.error(
+      "FAIL: " + msg + "\n  expected: " + JSON.stringify(expected) + "\n  actual:   " + JSON.stringify(actual)
+    );
+  }
 }
-function verify(v) {
-  if (!v) throw new Error("assertion failed");
-}
 
-console.log("  unit tests from utils.js");
-
-// -- extractReply --
-test("extractReply text", () => compare(extractReply({ text: "hello" }), "hello"));
-test("extractReply content string", () =>
-  compare(extractReply({ content: "world" }), "world"));
-test("extractReply content object", () =>
-  compare(extractReply({ content: { foo: "bar" } }), '{"foo":"bar"}'));
-test("extractReply message", () => compare(extractReply({ message: "hi" }), "hi"));
-test("extractReply parts", () =>
-  compare(extractReply({ parts: [{ type: "text", text: "abc" }] }), "abc"));
-test("extractReply parts skip non-text", () =>
-  compare(
-    extractReply({
-      parts: [
-        { type: "tool", text: "x" },
-        { type: "text", text: "y" },
-      ],
-    }),
-    "y",
-  ));
-test("extractReply tokens", () =>
-  compare(extractReply({ tokens: "tok" }), "tok"));
-test("extractReply fallback", () =>
-  compare(extractReply({ unknown: "val" }), '{"unknown":"val"}'));
-test("extractReply empty parts", () => compare(extractReply({ parts: [] }), ""));
-test("extractReply text priority", () =>
-  compare(extractReply({ text: "a", content: "b" }), "a"));
-
-// -- buildModelList --
-test("buildModelList empty", () => {
-  const r = buildModelList({});
-  compare(r.length, 1);
-  compare(r[0].display, "No models found");
-});
-
-test("buildModelList providers", () => {
-  const r = buildModelList({
-    providers: [
-      { id: "a", name: "A", models: { m1: { name: "M1" }, m2: {} } },
-      { id: "b", name: "B", models: { m3: { name: "M3" } } },
-    ],
-  });
-  compare(r.length, 3);
-  compare(r[0].value, "a/m1");
-  compare(r[1].value, "a/m2");
-  compare(r[2].value, "b/m3");
-});
-
-test("buildModelList disabled", () => {
-  const r = buildModelList({
-    providers: [
-      { id: "x", name: "X", enabled: false, models: { m1: { name: "M1" } } },
-      { id: "y", name: "Y", models: { m2: { name: "M2" } } },
-    ],
-  });
-  compare(r.length, 1);
-  compare(r[0].value, "y/m2");
-});
-
-test("buildModelList no models", () => {
-  const r = buildModelList({ providers: [{ id: "a", name: "A" }] });
-  compare(r.length, 1);
-  compare(r[0].value, "a/default");
-});
-
-test("buildModelList empty providers", () => {
-  const r = buildModelList({ providers: [] });
-  compare(r.length, 1);
-  compare(r[0].display, "No models found");
-});
-
-test("buildModelList new API format with connected filter", () => {
-  const r = buildModelList({
-    all: [
-      { id: "a", name: "A", models: { m1: { name: "M1" } } },
-      { id: "b", name: "B", models: { m2: { name: "M2" } } },
-      { id: "c", name: "C", models: { m3: { name: "M3" } } },
-    ],
-    connected: ["a", "c"],
-  });
-  compare(r.length, 2);
-  compare(r[0].value, "a/m1");
-  compare(r[1].value, "c/m3");
-});
-
-test("buildModelList new API format no connected filter", () => {
-  const r = buildModelList({
-    all: [
-      { id: "a", name: "A", models: { m1: { name: "M1" } } },
-    ],
-  });
-  compare(r.length, 1);
-  compare(r[0].value, "a/m1");
-});
-
-test("buildModelList new API format filters out unconnected", () => {
-  const r = buildModelList({
-    all: [
-      { id: "x", name: "X", models: { m1: { name: "M1" } } },
-    ],
-    connected: ["y"],
-  });
-  compare(r.length, 1);
-  compare(r[0].display, "No models found");
-});
-
-// -- buildModelListFromConfig --
-test("buildModelListFromConfig", () => {
-  const r = buildModelListFromConfig({
-    providers: {
-      a: { name: "A", models: { m1: { name: "M1" } } },
-      b: { name: "B", models: {} },
+const providerData = {
+  all: [
+    {
+      id: "opencode-go",
+      name: "Opencode",
+      enabled: true,
+      models: {
+        "gpt-4o": { name: "GPT-4o" },
+        "claude-sonnet": { name: "Claude Sonnet" },
+      },
     },
-  });
-  compare(r.length, 2);
-  compare(r[0].value, "a/m1");
-  compare(r[1].value, "b/default");
-});
+    {
+      id: "ollama",
+      name: "Ollama",
+      enabled: true,
+      models: {
+        llama3: { name: "Llama 3" },
+      },
+    },
+    {
+      id: "disabled-provider",
+      name: "Disabled",
+      enabled: false,
+      models: { m1: { name: "M1" } },
+    },
+  ],
+  connected: ["opencode-go", "ollama"],
+};
 
-// -- addMessage --
-test("addMessage appends", () => {
-  const orig = [{ role: "user", text: "hi", time: "12:00" }];
-  const r = addMessage("assistant", "world", orig);
-  compare(r.length, 2);
-  compare(r[0].role, "user");
-  compare(r[1].role, "assistant");
-  verify(r[1].time !== undefined);
-  compare(orig.length, 1); // immutable
-});
+const result = buildModelList(providerData, []);
 
-test("addMessage empty", () => {
-  const r = addMessage("user", "first", []);
-  compare(r.length, 1);
-  compare(r[0].role, "user");
-  compare(r[0].text, "first");
-});
+assert(result.length === 3, "should have 3 models (disabled provider excluded)");
+assertEq(result[0].value, "opencode-go/gpt-4o", "opencode-go sorted first");
+assertEq(result[1].value, "opencode-go/claude-sonnet", "opencode-go second model");
+assertEq(result[2].value, "ollama/llama3", "ollama model last");
 
-// -- formatTime --
-test("formatTime", () => {
-  compare(formatTime(new Date(2024, 0, 1, 9, 5)), "09:05");
-  compare(formatTime(new Date(2024, 0, 1, 23, 59)), "23:59");
-});
+const withRecent = buildModelList(providerData, ["ollama/llama3"]);
+assertEq(withRecent[0].value, "ollama/llama3", "recent model first");
+assert(withRecent[0].providerName === "\u2B50 Recent", "recent model has star label");
+assertEq(withRecent.length, 3, "total count unchanged with recent");
 
-console.log("  Results: " + pass + " passed, " + fail + " failed");
-process.exit(fail > 0 ? 1 : 0);
+const noModels = buildModelList({}, []);
+assertEq(noModels.length, 1, "empty data returns fallback");
+assertEq(noModels[0].value, "", "fallback has empty value");
+
+const noFilterResult = buildModelList(
+  { all: [{ id: "p1", name: "P1", enabled: true, models: { m1: { name: "M1" } } }] },
+  []
+);
+assertEq(noFilterResult.length, 1, "works without connected filter");
+
+const providerNoModels = buildModelList(
+  { all: [{ id: "p1", name: "P1", enabled: true }], connected: ["p1"] },
+  []
+);
+assertEq(providerNoModels[0].value, "p1/default", "provider without models gets default");
+
+const configData = {
+  providers: {
+    "opencode-go": {
+      name: "Opencode",
+      models: { "gpt-4o": { name: "GPT-4o" } },
+    },
+    ollama: {
+      name: "Ollama",
+      models: { llama3: { name: "Llama 3" } },
+    },
+  },
+};
+
+const configResult = buildModelListFromConfig(configData, []);
+assert(configResult.length === 2, "config: 2 models from providers");
+assertEq(configResult[0].value, "opencode-go/gpt-4o", "config: opencode-go sorted first");
+
+const configRecent = buildModelListFromConfig(configData, ["ollama/llama3"]);
+assertEq(configRecent[0].value, "ollama/llama3", "config: recent model first");
+
+const emptyConfig = buildModelListFromConfig({ providers: {} }, []);
+assertEq(emptyConfig.length, 1, "config: empty providers returns fallback");
+
+const configProviderNoModels = buildModelListFromConfig(
+  { providers: { p1: { name: "P1", models: {} } } },
+  []
+);
+assertEq(configProviderNoModels[0].value, "p1/default", "config: empty models gets default");
+
+const manyRecent = buildModelList(
+  providerData,
+  ["ollama/llama3", "opencode-go/gpt-4o", "opencode-go/claude-sonnet"]
+);
+assertEq(manyRecent[0].value, "ollama/llama3", "multiple recent: first recent first");
+assertEq(manyRecent[1].value, "opencode-go/gpt-4o", "multiple recent: second recent second");
+assertEq(manyRecent[2].value, "opencode-go/claude-sonnet", "multiple recent: third recent third");
+assertEq(manyRecent.length, 3, "multiple recent: no duplicates");
+
+console.log("\n" + passed + " passed, " + failed + " failed");
+process.exit(failed > 0 ? 1 : 0);

@@ -1,91 +1,120 @@
-// Pure utility functions for the AI Chat widget
-
-function extractReply(data) {
-    if (data.text) return data.text
-    if (data.content) return typeof data.content === "string" ? data.content : JSON.stringify(data.content)
-    if (data.message) return typeof data.message === "string" ? data.message : JSON.stringify(data.message)
-    if (data.parts) {
-        var text = ""
-        for (var i = 0; i < data.parts.length; i++) {
-            if (data.parts[i].type === "text") text += data.parts[i].text
-        }
-        return text
-    }
-    if (data.tokens) return data.tokens
-    return JSON.stringify(data)
-}
-
-function buildModelList(data) {
-    var models = []
-    var list = []
-    var connectedFilter = null
+function buildModelList(data, recentValues) {
+    var allModels = [];
+    var list = [];
+    var connectedFilter = null;
 
     if (data && data.all && Array.isArray(data.all)) {
-        list = data.all
-        connectedFilter = Array.isArray(data.connected) ? data.connected : null
+        list = data.all;
+        connectedFilter = Array.isArray(data.connected) ? data.connected : null;
     } else if (Array.isArray(data)) {
-        list = data
+        list = data;
     } else if (data && data.providers) {
-        list = data.providers
+        list = data.providers;
     }
 
     for (var i = 0; i < list.length; i++) {
-        var p = list[i]
-        if (!p.id || !p.name || p.enabled === false) continue
-        if (connectedFilter && connectedFilter.indexOf(p.id) === -1) continue
+        var p = list[i];
+        if (!p.id || !p.name || p.enabled === false) continue;
+        if (connectedFilter && connectedFilter.indexOf(p.id) === -1) continue;
 
-        var pid = p.id
+        var pid = p.id;
         if (p.models) {
             for (var mid in p.models) {
                 if (p.models.hasOwnProperty(mid)) {
-                    var m = p.models[mid]
-                    models.push({
+                    var m = p.models[mid];
+                    allModels.push({
                         display: p.name + ": " + (m.name || mid),
-                        value: pid + "/" + mid
-                    })
+                        value: pid + "/" + mid,
+                        providerName: p.name,
+                        providerId: pid
+                    });
                 }
             }
         } else {
-            models.push({ display: p.name, value: pid + "/default" })
+            allModels.push({display: p.name, value: pid + "/default", providerName: p.name, providerId: pid});
         }
     }
-    return models.length > 0 ? models : [{ display: "No models found", value: "" }]
+
+    return sortWithRecent(allModels, recentValues);
 }
 
-function buildModelListFromConfig(data) {
-    var models = []
-    var providers = data.providers || {}
+function buildModelListFromConfig(data, recentValues) {
+    var allModels = [];
+    var providers = data.providers || {};
+
     for (var pid in providers) {
-        if (!providers.hasOwnProperty(pid)) continue
-        var p = providers[pid]
-        var name = p.name || pid
-        var pModels = p.models || {}
+        if (!providers.hasOwnProperty(pid)) continue;
+        var p = providers[pid];
+        var name = p.name || pid;
+        var pModels = p.models || {};
+        var modelCount = 0;
+
         for (var mid in pModels) {
             if (pModels.hasOwnProperty(mid)) {
-                var m = pModels[mid]
-                models.push({
+                var m = pModels[mid];
+                allModels.push({
                     display: name + ": " + (m.name || mid),
-                    value: pid + "/" + mid
-                })
+                    value: pid + "/" + mid,
+                    providerName: name,
+                    providerId: pid
+                });
+                modelCount++;
             }
         }
-        if (Object.keys(pModels).length === 0) {
-            models.push({ display: name + ": default", value: pid + "/default" })
+
+        if (modelCount === 0) {
+            allModels.push({display: name + ": default", value: pid + "/default", providerName: name, providerId: pid});
         }
     }
-    return models.length > 0 ? models : [{ display: "No models found", value: "" }]
+
+    return sortWithRecent(allModels, recentValues);
 }
 
-function addMessage(role, text, messages) {
-    var now = new Date()
-    var h = now.getHours().toString().padStart(2, '0')
-    var m = now.getMinutes().toString().padStart(2, '0')
-    var msg = { role: role, text: text, time: h + ":" + m }
-    return messages.slice().concat([msg])
-}
+function sortWithRecent(allModels, recentValues) {
+    var recentSet = {};
+    if (recentValues && Array.isArray(recentValues)) {
+        for (var ri = 0; ri < recentValues.length; ri++)
+            recentSet[recentValues[ri]] = true;
+    }
 
-function formatTime(date) {
-    var h = date.getHours().toString().padStart(2, '0')
-    var m = date.getMinutes().toString().padStart(2, '0')
-    return h + ":" + m
+    var models = [];
+    if (recentValues && recentValues.length > 0) {
+        for (var ri = 0; ri < recentValues.length; ri++) {
+            var rv = recentValues[ri];
+            for (var ai = 0; ai < allModels.length; ai++) {
+                if (allModels[ai].value === rv) {
+                    models.push({
+                        display: allModels[ai].display,
+                        value: rv,
+                        providerName: "\u2B50 Recent",
+                        providerId: allModels[ai].providerId
+                    });
+                    break;
+                }
+            }
+        }
+    }
+
+    var nonRecent = [];
+    for (var ai = 0; ai < allModels.length; ai++) {
+        if (!recentSet[allModels[ai].value])
+            nonRecent.push(allModels[ai]);
+    }
+
+    nonRecent.sort(function(a, b) {
+        var aGo = a.value.indexOf("opencode-go/") === 0;
+        var bGo = b.value.indexOf("opencode-go/") === 0;
+        if (aGo && !bGo) return -1;
+        if (!aGo && bGo) return 1;
+        var aZen = a.value.indexOf("opencode/") === 0;
+        var bZen = b.value.indexOf("opencode/") === 0;
+        if (aZen && !bZen) return -1;
+        if (!aZen && bZen) return 1;
+        return 0;
+    });
+
+    for (var ni = 0; ni < nonRecent.length; ni++)
+        models.push(nonRecent[ni]);
+
+    return models.length > 0 ? models : [{display: "No models found", value: ""}];
 }

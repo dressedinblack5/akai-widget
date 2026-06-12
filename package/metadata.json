@@ -1,16 +1,16 @@
 {
     "KPackageStructure": "Plasma/Applet",
     "KPlugin": {
-        "Id": "akai-chat",
-        "Name": "akai-chat",
+        "Id": "akai-widget",
+        "Name": "AKAI Widget",
         "Description": "Chatbot widget powered by Opencode",
-        "Icon": "system-run",
+        "Icon": "dialog-messages",
         "Version": "1.0",
         "License": "GPL-2.0+",
         "Authors": [
             {
-                "Name": "User",
-                "Email": ""
+                "Name": "dressedinblack",
+                "Url": "https://github.com/dressedinblack5"
             }
         ],
         "Category": "Utilities",

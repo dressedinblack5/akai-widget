@@ -5,58 +5,132 @@ import QtQuick.Layouts
 RowLayout {
     id: root
 
-    property bool enabled: true
     property bool loading: false
+    property int connectionStatus: 1
+
+    SystemPalette { id: sysPal; colorGroup: SystemPalette.Active }
+
+    readonly property color ibText: sysPal.windowText
+    readonly property color ibBg: Qt.lighter(sysPal.window, 1.05)
+    readonly property color ibFocusBorder: sysPal.highlight
+    readonly property color ibBorder: Qt.rgba(sysPal.windowText.r, sysPal.windowText.g, sysPal.windowText.b, 0.12)
+    readonly property color ibGreen: "#4CAF50"
+    readonly property color ibRed: "#F44336"
+    readonly property color ibDisabledText: Qt.darker(sysPal.windowText, 2)
+    readonly property color ibBtnText: sysPal.highlightedText
+    readonly property color ibSendBg: Qt.darker(sysPal.highlight, 1.5)
 
     signal send(string text)
     signal newChat()
+    signal stopRequested()
+    signal connectRequested()
 
     spacing: 4
     Layout.fillWidth: true
 
+    function sendMessage() {
+        var text = inputField.text.trim();
+        if (text.length > 0) {
+            inputField.text = "";
+            root.send(text);
+        }
+    }
+
     TextArea {
         id: inputField
+
         Layout.fillWidth: true
-        Layout.minimumHeight: 36
+        Layout.minimumHeight: 34
         Layout.maximumHeight: 100
-        enabled: root.enabled && !root.loading
-        placeholderText: root.loading ? "Waiting for response..." : "Type a message..."
-        color: "#e0e0e0"
-        placeholderTextColor: "#666666"
+        visible: root.enabled
+        enabled: root.enabled
+        placeholderText: root.loading ? "Model is thinking..." : "Type a message..."
+        color: root.ibText
+        placeholderTextColor: Qt.darker(sysPal.windowText, 1.8)
         font.pixelSize: 13
         wrapMode: TextArea.WordWrap
 
-        background: Rectangle {
-            color: "#1e1e1e"
-            radius: 6
-            border.width: 1
-            border.color: inputField.activeFocus ? "#3a7bd5" : "#333333"
-        }
-
         Keys.onReturnPressed: function(event) {
             if (!(event.modifiers & Qt.ShiftModifier)) {
-                event.accepted = true
-                sendMessage()
+                event.accepted = true;
+                root.sendMessage();
             }
+        }
+
+        background: Rectangle {
+            color: root.ibBg
+            radius: 6
+            border.width: 1
+            border.color: inputField.activeFocus ? root.ibFocusBorder : root.ibBorder
+        }
+    }
+
+    Button {
+        id: connectBtn
+
+        Layout.fillWidth: true
+        Layout.minimumHeight: 34
+        visible: !root.enabled
+        text: "Connect"
+        onClicked: root.connectRequested()
+
+        background: Rectangle {
+            color: connectBtn.hovered ? root.ibGreen : Qt.darker(root.ibGreen, 1.1)
+            radius: 6
+        }
+
+        contentItem: Label {
+            text: connectBtn.text
+            color: root.ibBtnText
+            font.pixelSize: 14
+            font.bold: true
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
         }
     }
 
     Button {
         id: sendBtn
-        enabled: inputField.text.trim().length > 0 && !root.loading
-        implicitWidth: 36
-        implicitHeight: 36
-        text: "➤"
-        onClicked: sendMessage()
+
+        implicitWidth: 34
+        implicitHeight: 34
+        visible: root.enabled
+        enabled: inputField.text.trim().length > 0
+        text: "\u2191"
+        onClicked: root.sendMessage()
 
         background: Rectangle {
-            color: sendBtn.enabled ? "#3a7bd5" : "#333333"
+            color: sendBtn.enabled ? (sendBtn.hovered ? root.ibFocusBorder : root.ibSendBg) : root.ibBg
             radius: 6
         }
+
         contentItem: Label {
             text: sendBtn.text
-            color: "white"
+            color: sendBtn.enabled ? root.ibBtnText : root.ibDisabledText
             font.pixelSize: 16
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+    }
+
+    Button {
+        id: stopBtn
+
+        implicitWidth: 34
+        implicitHeight: 34
+        visible: root.loading
+        text: "\u25A0"
+        onClicked: root.stopRequested()
+
+        background: Rectangle {
+            color: stopBtn.hovered ? Qt.darker(root.ibRed, 1.1) : root.ibRed
+            radius: 6
+        }
+
+        contentItem: Label {
+            text: stopBtn.text
+            color: root.ibBtnText
+            font.pixelSize: 12
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
@@ -64,30 +138,23 @@ RowLayout {
 
     Button {
         id: newChatBtn
-        enabled: !root.loading
-        implicitWidth: 36
-        implicitHeight: 36
-        text: "↺"
+
+        implicitWidth: 34
+        implicitHeight: 34
+        text: "\u21BA"
         onClicked: root.newChat()
 
         background: Rectangle {
-            color: newChatBtn.enabled ? "#444444" : "#333333"
+            color: newChatBtn.hovered ? Qt.darker(root.ibBg, 1.3) : Qt.darker(root.ibBg, 1.5)
             radius: 6
         }
+
         contentItem: Label {
             text: newChatBtn.text
-            color: "white"
+            color: Qt.darker(root.ibText, 1.3)
             font.pixelSize: 16
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
-        }
-    }
-
-    function sendMessage() {
-        var text = inputField.text.trim()
-        if (text.length > 0) {
-            inputField.text = ""
-            root.send(text)
         }
     }
 }

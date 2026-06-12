@@ -1,281 +1,454 @@
+import QtQml.Models
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import org.kde.plasma.plasmoid
+import "code"
 import org.kde.plasma.core as PlasmaCore
+import org.kde.plasma.plasmoid
 import "utils.js" as Utils
 
 PlasmoidItem {
     id: root
 
+    property bool _flashConnected: false
+
+    SystemPalette { id: sysPal; colorGroup: SystemPalette.Active }
+
+    preferredRepresentation: Plasmoid.formFactor === PlasmaCore.Types.Planar ? fullRepresentation : compactRepresentation
     Plasmoid.backgroundHints: PlasmaCore.Types.StandardBackground
-    Plasmoid.icon: "system-run"
+    Plasmoid.icon: "dialog-messages"
 
-    // -- state --
-    property string serverUrl: "http://localhost:4096"
-    property var messages: []
-    property string sessionId: ""
-    property var availableModels: []
-    property string selectedProviderId: ""
-    property string selectedModelId: ""
-    property int connectionStatus: 0
-    property bool loading: false
+    ChatEngine {
+        id: engine
 
-    // -- full representation --
-    fullRepresentation: ColumnLayout {
-        id: layout
-        implicitWidth: 420
-        implicitHeight: 540
-        spacing: 6
-        anchors.margins: 4
+        serverUrl: "http://" + (plasmoid.configuration.serverHost || "localhost") + ":" + (plasmoid.configuration.serverPort || 4096)
+        messageModel: messageModel
+        processManager: processManager
+        savedModel: plasmoid.configuration.lastModel || ""
 
-        // header
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 36
-            color: "#1a1a1a"
-            radius: 6
+        onMessageAdded: saveMessages()
+    }
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: 6
-                spacing: 6
+    ProcessManager {
+        id: processManager
 
-                StatusIndicator {
-                    id: statusDot
-                    status: root.connectionStatus
-                }
-
-                ModelSelector {
-                    id: modelSelector
-                    Layout.fillWidth: true
-                    models: root.availableModels
-                    enabled: root.connectionStatus === 1
-                    onModelSelected: function(modelId) {
-                        var parts = modelId.split("/")
-                        root.selectedProviderId = parts[0]
-                        root.selectedModelId = parts.length > 1 ? parts.slice(1).join("/") : parts[0]
-                    }
-                }
-
-            }
-        }
-
-        // chat area
-        ChatView {
-            id: chatView
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            messages: root.messages
-            loading: root.loading
-            loadingText: selectedModelId
-                ? "Thinking with " + selectedProviderId + "/" + selectedModelId + "..."
-                : "Thinking..."
-        }
-
-        // status bar
-        Label {
-            visible: root.connectionStatus !== 1
-            text: root.connectionStatus === 0
-                ? "Connecting to opencode..."
-                : root.connectionStatus === 2
-                    ? "Server offline — run 'opencode serve'"
-                    : ""
-            color: root.connectionStatus === 2 ? "#F44336" : "#FFA726"
-            font.pixelSize: 11
-            horizontalAlignment: Text.AlignHCenter
-            Layout.fillWidth: true
-            Layout.bottomMargin: -2
-        }
-
-        // input
-        InputBar {
-            id: inputBar
-            Layout.fillWidth: true
-            enabled: root.connectionStatus === 1
-            loading: root.loading
-            onSend: function(text) { sendMessage(text) }
-            onNewChat: resetChat()
+        onServerStarted: engine.checkHealth()
+        onServerError: function(error) {
+            engine.addMessage("assistant", "Server error: " + error);
         }
     }
 
-    // -- initialization --
-    Component.onCompleted: {
-        console.log("AI Chat widget starting")
-        checkHealth()
+    StorageHelper {
+        id: storage
     }
 
-    // -- HTTP --
-    function httpRequest(method, path, body, callback) {
-        var xhr = new XMLHttpRequest()
-        xhr.open(method, root.serverUrl + path, true)
+    ListModel {
+        id: messageModel
+    }
 
-        if (body) {
-            xhr.setRequestHeader("Content-Type", "application/json")
+    Shortcut {
+        sequence: "Ctrl+N"
+        onActivated: engine.resetChat()
+    }
+
+    function saveMessages() {
+        var arr = [];
+        for (var i = 0; i < messageModel.count; i++) {
+            arr.push({
+                role: messageModel.get(i).role,
+                text: messageModel.get(i).text,
+                time: messageModel.get(i).time
+            });
         }
-
-        xhr.onreadystatechange = function() {
-            if (xhr.readyState === XMLHttpRequest.DONE) {
-                var data = null
-                var error = xhr.status !== 200 && xhr.status !== 201 && xhr.status !== 204
-                if (!error && xhr.responseText) {
-                    try { data = JSON.parse(xhr.responseText) }
-                    catch (e) { error = true }
-                }
-                callback(error, data, xhr.status)
-            }
-        }
-
-        xhr.send(body ? JSON.stringify(body) : null)
+        storage.writeFile(storage.storagePath() + "/messages.json", JSON.stringify(arr));
     }
 
-    function checkHealth() {
-        root.connectionStatus = 0
-        httpRequest("GET", "/global/health", null, function(error, data) {
-            if (!error && data && (data.healthy || data.status === "ok")) {
-                root.connectionStatus = 1
-                console.log("Server connected, version:", data.version || "unknown")
-                fetchProviders()
-            } else {
-                root.connectionStatus = 2
-                console.log("Health check failed: " + (data ? JSON.stringify(data) : "no response"))
-            }
-        })
-    }
-
-    function fetchProviders() {
-        httpRequest("GET", "/provider", null, function(error, data) {
-            if (!error && data) {
-                root.availableModels = Utils.buildModelList(data)
-            } else {
-                console.log("Failed to fetch providers, trying /config")
-                httpRequest("GET", "/config", null, function(err2, data2) {
-                    if (!err2 && data2) {
-                        root.availableModels = Utils.buildModelListFromConfig(data2)
-                    }
-                })
-            }
-        })
-    }
-
-    function createSession(callback) {
-        httpRequest("POST", "/session", null, function(error, data) {
-            if (!error && data && data.id) {
-                root.sessionId = data.id
-                console.log("Session created:", data.id)
-                if (callback) callback(true)
-            } else {
-                console.log("Session creation failed")
-                if (callback) callback(false)
-            }
-        })
-    }
-
-    function sendMessage(text) {
-        if (!root.sessionId) {
-            root.loading = true
-            createSession(function(success) {
-                if (success) {
-                    doSendMessage(text)
-                } else {
-                    root.loading = false
-                    addMessage("assistant", "Error: Could not create session. Is the server running?")
-                }
-            })
-        } else {
-            doSendMessage(text)
-        }
-    }
-
-    function doSendMessage(text) {
-        addMessage("user", text)
-        root.loading = true
-
-        var now = Date.now()
-        var r1 = Math.random().toString(36).substring(2, 22)
-        var r2 = Math.random().toString(36).substring(2, 22)
-        var msgId = "msg_" + now + "001" + r1
-        var partId = "prt_" + now + "002" + r2
-
-        var body = {
-            agent: "build",
-            model: {
-                modelID: root.selectedModelId,
-                providerID: root.selectedProviderId
-            },
-            messageID: msgId,
-            parts: [{
-                id: partId,
-                type: "text",
-                text: text
-            }]
-        }
-
-        httpRequest("POST", "/session/" + root.sessionId + "/prompt_async", body, function(error) {
-            if (error) {
-                root.loading = false
-                addMessage("assistant", "Error: Failed to send prompt")
-                return
-            }
-            pollForResponse(root.sessionId)
-        })
-    }
-
-    function pollForResponse(sessionId) {
-        var maxPolls = 120
-        var pollCount = 0
-        var seenIds = {}
-
-        var timerId = setInterval(function() {
-            if (pollCount >= maxPolls) {
-                clearInterval(timerId)
-                root.loading = false
-                addMessage("assistant", "No response from " + root.selectedProviderId + "/" + root.selectedModelId + " (timeout). Try a different model or provider.")
-                return
-            }
-            pollCount++
-
-            httpRequest("GET", "/session/" + sessionId + "/message?limit=20", null, function(error, data) {
-                if (error || !data) return
-
-                var msgs = data.data || data
-                if (!Array.isArray(msgs)) return
-
+    function loadMessages() {
+        var data = storage.readFile(storage.storagePath() + "/messages.json");
+        if (data) {
+            try {
+                var msgs = JSON.parse(data);
                 for (var i = 0; i < msgs.length; i++) {
-                    var msg = msgs[i]
-                    if (!msg || !msg.id || seenIds[msg.id]) continue
-                    seenIds[msg.id] = true
+                    messageModel.append(msgs[i]);
+                }
+            } catch (e) {}
+        }
+    }
 
-                    var role = msg.info ? msg.info.role : ""
-                    if (role !== "assistant") continue
+    Component.onCompleted: {
+        loadMessages();
+        engine.checkHealth();
+        if (plasmoid.configuration.popupWidth <= 0) {
+            plasmoid.configuration.popupWidth = Math.round(Screen.width * 0.5);
+            plasmoid.configuration.popupHeight = Math.round(Screen.height * 0.85);
+        }
+    }
 
-                    var parts = msg.parts || []
-                    for (var j = 0; j < parts.length; j++) {
-                        if (parts[j].type === "text" && parts[j].text) {
-                            clearInterval(timerId)
-                            root.loading = false
-                            addMessage("assistant", parts[j].text)
-                            return
+    onExpandedChanged: engine.setActive(root.expanded)
+
+    compactRepresentation: Item {
+        implicitWidth: 32
+        implicitHeight: 32
+
+        StatusIndicator {
+            anchors.centerIn: parent
+            status: engine.connectionStatus
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.expanded = !root.expanded
+        }
+    }
+
+    fullRepresentation: Item {
+        id: popupOuter
+
+        Layout.preferredWidth: plasmoid.configuration.popupWidth > 0 ? plasmoid.configuration.popupWidth : Math.round(Screen.width * 0.5)
+        Layout.preferredHeight: plasmoid.configuration.popupHeight > 0 ? plasmoid.configuration.popupHeight : Math.round(Screen.height * 0.85)
+        Layout.minimumWidth: 300
+        Layout.minimumHeight: 400
+
+        readonly property color themeBg: sysPal.window
+        readonly property color themeText: sysPal.windowText
+        readonly property color themeHighlight: sysPal.highlight
+        readonly property color themeHighlightedText: sysPal.highlightedText
+        readonly property color themeGreen: "#4CAF50"
+        readonly property color themeRed: "#F44336"
+        readonly property color themeOrange: "#FFA726"
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 4
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 36
+                color: popupOuter.themeBg
+                radius: 6
+
+                RowLayout {
+                    x: 4
+                    y: 0
+                    width: parent.width - 8
+                    height: parent.height
+                    spacing: 4
+
+                    Item {
+                        id: statusWrap
+                        Layout.preferredWidth: 10
+                        Layout.preferredHeight: 10
+
+                        HoverHandler { id: statusHover; cursorShape: Qt.PointingHandCursor }
+
+                        StatusIndicator {
+                            id: statusDot
+                            status: engine.connectionStatus
+                            disconnectedColor: Qt.rgba(popupOuter.themeText.r, popupOuter.themeText.g, popupOuter.themeText.b, 0.5)
+                            connectedColor: popupOuter.themeGreen
+                            errorColor: popupOuter.themeRed
+                        }
+
+                        TapHandler {
+                            onTapped: {
+                                if (engine.connectionStatus === 2)
+                                    engine.checkHealth();
+                            }
+                        }
+
+                        ToolTip {
+                            visible: statusHover.hovered
+                            text: engine.connectionStatus === 0 ? "Connecting..." :
+                                  engine.connectionStatus === 1 ? "Server online" :
+                                  "Health check failed — tap to retry"
+                            delay: 500
+                        }
+                    }
+
+                    ModelSelector {
+                        id: modelSelector
+
+                        Layout.fillWidth: true
+                        models: engine.availableModels
+                        enabled: engine.connectionStatus === 1
+
+                        Component.onCompleted: {
+                            engine.modelSelectorRef = modelSelector;
+                        }
+
+                        onModelSelected: function(modelId) {
+                            var parts = modelId.split("/");
+                            engine.selectedProviderId = parts[0];
+                            engine.selectedModelId = parts.length > 1 ? parts.slice(1).join("/") : parts[0];
+                            for (var mi = 0; mi < engine.availableModels.length; mi++) {
+                                if (engine.availableModels[mi].value === modelId) {
+                                    var d = engine.availableModels[mi].display;
+                                    var ci = d.indexOf(": ");
+                                    engine.selectedModelName = ci >= 0 ? d.substring(ci + 2) : d;
+                                    break;
+                                }
+                            }
+                            plasmoid.configuration.lastModel = modelId;
+                        }
+                    }
+
+                    Item {
+                        Layout.preferredWidth: clearBtn.visible ? 60 : 0
+                        Layout.preferredHeight: 24
+
+                        Rectangle {
+                            id: clearBtn
+                            anchors.fill: parent
+                            radius: 4
+                            visible: messageModel.count > 0
+                            color: clearMouse.containsMouse ? popupOuter.themeRed : Qt.darker(popupOuter.themeBg, 1.3)
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: "Clear"
+                                color: popupOuter.themeText
+                                font.pixelSize: 11
+                            }
+
+                            MouseArea {
+                                id: clearMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: engine.resetChat()
+                            }
+
+                            ToolTip {
+                                visible: clearMouse.containsMouse
+                                text: "Clear chat history"
+                                delay: 500
+                            }
                         }
                     }
                 }
-            })
-        }, 2000)
-    }
+            }
 
-    function addMessage(role, text) {
-        root.messages = Utils.addMessage(role, text, root.messages)
-    }
+            ChatView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: engine.connectionStatus === 1
+                messages: messageModel
+                loading: engine.loading
+                loadingText: engine.selectedModelName ? "Thinking with " + engine.selectedModelName : "Thinking"
+            }
 
-    function resetChat() {
-        root.sessionId = ""
-        root.messages = []
-        if (root.connectionStatus === 1) {
-            createSession(function(success) {
-                if (!success) {
-                    addMessage("assistant", "Warning: Could not create new session.")
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: engine.connectionStatus !== 1
+
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    spacing: 12
+
+                    Label {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: engine.connectionStatus === 0 ? "Connecting..." : "Server offline"
+                        color: engine.connectionStatus === 0 ? popupOuter.themeOrange : popupOuter.themeRed
+                        font.pixelSize: 14
+                    }
+
+                    Button {
+                        Layout.alignment: Qt.AlignHCenter
+                        visible: engine.connectionStatus === 2
+                        text: "Connect"
+                        onClicked: engine.checkHealth()
+
+                        background: Rectangle {
+                            color: parent.hovered ? popupOuter.themeGreen : Qt.darker(popupOuter.themeGreen, 1.1)
+                            radius: 6
+                        }
+
+                        contentItem: Label {
+                            text: parent.text
+                            color: popupOuter.themeHighlightedText
+                            font.pixelSize: 14
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
                 }
-            })
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 18
+                visible: engine.connectionStatus !== 1 || _flashConnected
+
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: 4
+                    opacity: engine.connectionStatus !== 1 ? 1 : 0
+                    visible: opacity > 0
+
+                    Label {
+                        text: engine.connectionStatus === 0 ? "Connecting\u2026" : "Server offline"
+                        color: engine.connectionStatus === 2 ? popupOuter.themeRed : popupOuter.themeOrange
+                        font.pixelSize: 10
+                        horizontalAlignment: Text.AlignHCenter
+                        Layout.fillWidth: true
+                    }
+
+                    Rectangle {
+                        implicitWidth: 22
+                        implicitHeight: 22
+                        radius: 3
+                        visible: engine.connectionStatus === 2
+                        color: startBtn.hovered ? popupOuter.themeGreen : Qt.darker(popupOuter.themeGreen, 1.1)
+
+                        Label {
+                            anchors.centerIn: parent
+                            text: processManager.serverRunning ? "\u21BB" : "\u25B6"
+                            color: "white"
+                            font.pixelSize: 12
+                        }
+
+                        MouseArea {
+                            id: startBtn
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (processManager.serverRunning)
+                                    processManager.restartServer();
+                                else
+                                    processManager.startServer();
+                            }
+                        }
+
+                        ToolTip {
+                            visible: startBtn.containsMouse
+                            text: processManager.serverRunning ? "Restart server" : "Start server"
+                            delay: 600
+                        }
+                    }
+
+                    Rectangle {
+                        implicitWidth: 22
+                        implicitHeight: 22
+                        radius: 3
+                        visible: engine.connectionStatus === 2 && processManager.serverRunning
+                    color: stopSrvBtn.hovered ? Qt.darker(popupOuter.themeRed, 1.1) : popupOuter.themeRed
+
+                    Label {
+                        anchors.centerIn: parent
+                        text: "\u25A0"
+                        color: popupOuter.themeHighlightedText
+                            font.pixelSize: 12
+                        }
+
+                        MouseArea {
+                            id: stopSrvBtn
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: processManager.stopServer()
+                        }
+
+                        ToolTip {
+                            visible: stopSrvBtn.containsMouse
+                            text: "Stop server"
+                            delay: 600
+                        }
+                    }
+
+                    Behavior on opacity {
+                        NumberAnimation { duration: 250 }
+                    }
+                }
+
+                Label {
+                    anchors.centerIn: parent
+                    text: "Connected"
+                    color: popupOuter.themeGreen
+                    font.pixelSize: 10
+                    opacity: _flashConnected ? 0.9 : 0
+                    visible: opacity > 0
+
+                    Behavior on opacity {
+                        NumberAnimation { duration: 500 }
+                    }
+                }
+            }
+
+            InputBar {
+                Layout.fillWidth: true
+                enabled: engine.connectionStatus === 1
+                loading: engine.loading
+                connectionStatus: engine.connectionStatus
+
+                onSend: function(text) { engine.sendMessage(text); }
+                onNewChat: engine.resetChat()
+                onStopRequested: engine.stopGeneration()
+                onConnectRequested: engine.checkHealth()
+            }
         }
+
+        Rectangle {
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            width: 16
+            height: 16
+            color: "#40ffffff"
+
+            Canvas {
+                anchors.fill: parent
+                onPaint: {
+                    var ctx = getContext("2d");
+                    ctx.strokeStyle = "#80ffffff";
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(width - 6, height);
+                    ctx.lineTo(width, height - 6);
+                    ctx.moveTo(width - 10, height);
+                    ctx.lineTo(width, height - 10);
+                    ctx.stroke();
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.SizeFDiagCursor
+                property real dragX: 0
+                property real dragY: 0
+                property real startW: 0
+                property real startH: 0
+                onPressed: {
+                    dragX = mouseX;
+                    dragY = mouseY;
+                    startW = popupOuter.width;
+                    startH = popupOuter.height;
+                }
+                onPositionChanged: {
+                    if (!pressed) return;
+                    var newW = Math.max(300, startW + (mouseX - dragX));
+                    var newH = Math.max(400, startH + (mouseY - dragY));
+                    plasmoid.configuration.popupWidth = Math.round(newW);
+                    plasmoid.configuration.popupHeight = Math.round(newH);
+                }
+            }
+        }
+    }
+    Connections {
+        target: engine
+        function onConnectionStatusChanged() {
+            if (engine.connectionStatus === 1) {
+                root._flashConnected = true;
+                connectedTimer.restart();
+            }
+        }
+    }
+
+    Timer {
+        id: connectedTimer
+        interval: 2500
+        repeat: false
+        onTriggered: root._flashConnected = false
     }
 }
