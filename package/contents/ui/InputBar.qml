@@ -146,7 +146,7 @@ RowLayout {
         onClicked: root.newChat()
 
         background: Rectangle {
-            color: newChatBtn.hovered ? Qt.darker(root.ibBg, 1.3) : Qt.darker(root.ibBg, 1.5)
+            color: newChatBtn.hovered ? Qt.lighter(root.ibBg, 1.05) : Qt.darker(root.ibBg, 1.5)
             radius: 4
         }
 

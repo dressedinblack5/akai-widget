@@ -102,14 +102,14 @@ function sortWithRecent(allModels, recentValues) {
     }
 
     nonRecent.sort(function(a, b) {
-        var aGo = a.value.indexOf("opencode-go/") === 0;
-        var bGo = b.value.indexOf("opencode-go/") === 0;
-        if (aGo && !bGo) return -1;
-        if (!aGo && bGo) return 1;
         var aZen = a.value.indexOf("opencode/") === 0;
         var bZen = b.value.indexOf("opencode/") === 0;
         if (aZen && !bZen) return -1;
         if (!aZen && bZen) return 1;
+        var aGo = a.value.indexOf("opencode-go/") === 0;
+        var bGo = b.value.indexOf("opencode-go/") === 0;
+        if (aGo && !bGo) return -1;
+        if (!aGo && bGo) return 1;
         return 0;
     });
 

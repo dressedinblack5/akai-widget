@@ -17,25 +17,7 @@ PlasmoidItem {
     Plasmoid.backgroundHints: PlasmaCore.Types.StandardBackground
     Plasmoid.icon: "dialog-messages"
 
-    property bool pinned: false
-
-    function togglePin() {
-        pinned = !pinned;
-        plasmoid.configuration.pinned = pinned;
-        applyPinState();
-    }
-
-    function applyPinState() {
-        var win = root.Window.window;
-        if (win) {
-            if (pinned) {
-                win.flags |= Qt.WindowStaysOnTopHint;
-                win.visibility = Window.Windowed;
-            } else {
-                win.flags &= ~Qt.WindowStaysOnTopHint;
-            }
-        }
-    }
+    property bool showUsage: false
 
     ChatEngine {
         id: engine
@@ -43,6 +25,7 @@ PlasmoidItem {
         serverUrl: "http://" + (plasmoid.configuration.serverHost || "localhost") + ":" + (plasmoid.configuration.serverPort || 4096)
         messageModel: messageModel
         processManager: processManager
+        usageTracker: usageTracker
         savedModel: plasmoid.configuration.lastModel || ""
 
         onMessageAdded: saveMessages()
@@ -52,13 +35,20 @@ PlasmoidItem {
         id: processManager
 
         onServerStarted: engine.checkHealth()
+        onServerStopped: Qt.callLater(engine.checkHealth)
         onServerError: function(error) {
             engine.addMessage("assistant", "Server error: " + error);
+            Qt.callLater(engine.checkHealth);
         }
     }
 
     StorageHelper {
         id: storage
+    }
+
+    UsageTracker {
+        id: usageTracker
+        storage: storage
     }
 
     ListModel {
@@ -101,15 +91,10 @@ PlasmoidItem {
             plasmoid.configuration.popupWidth = Math.round(Screen.width * 0.5);
             plasmoid.configuration.popupHeight = Math.round(Screen.height * 0.85);
         }
-        if (plasmoid.configuration.pinned) {
-            pinned = true;
-            Qt.callLater(applyPinState);
-        }
     }
 
     onExpandedChanged: {
         engine.setActive(root.expanded);
-        if (root.expanded && pinned) Qt.callLater(applyPinState);
     }
 
     compactRepresentation: Item {
@@ -219,35 +204,6 @@ PlasmoidItem {
                     }
 
                     Rectangle {
-                        id: pinBtn
-                        implicitWidth: 24
-                        implicitHeight: 24
-                        radius: 4
-                        color: pinMouse.containsMouse ? Qt.darker(popupOuter.themeHighlight, 1.1) : "transparent"
-
-                        Label {
-                            anchors.centerIn: parent
-                            text: root.pinned ? "\u25C9" : "\u25CB"
-                            color: root.pinned ? popupOuter.themeHighlight : (pinMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText)
-                            font.pixelSize: 14
-                        }
-
-                        MouseArea {
-                            id: pinMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.togglePin()
-                        }
-
-                        ToolTip {
-                            visible: pinMouse.containsMouse
-                            text: root.pinned ? "Unpin window" : "Pin window (keep above)"
-                            delay: 500
-                        }
-                    }
-
-                    Rectangle {
                         id: clearBtn
                         implicitWidth: 24
                         implicitHeight: 24
@@ -259,7 +215,7 @@ PlasmoidItem {
                             anchors.centerIn: parent
                             text: "\u2715"
                             color: clearMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText
-                            font.pixelSize: 12
+                            font.pixelSize: 14
                         }
 
                         MouseArea {
@@ -276,127 +232,172 @@ PlasmoidItem {
                             delay: 500
                         }
                     }
-                }
-            }
 
-            ChatView {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                visible: engine.connectionStatus === 1
-                messages: messageModel
-                loading: engine.loading
-                loadingText: engine.selectedModelName ? "Thinking with " + engine.selectedModelName : "Thinking"
+                    Rectangle {
+                        id: usageBtn
+                        implicitWidth: 24
+                        implicitHeight: 24
+                        radius: 4
+                        color: usageMouse.containsMouse ? Qt.darker(popupOuter.themeHighlight, 1.1) : (root.showUsage ? popupOuter.themeHighlight : "transparent")
+
+                        Label {
+                            anchors.centerIn: parent
+                            text: "\u2607"
+                            color: root.showUsage ? popupOuter.themeHighlightedText : (usageMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText)
+                            font.pixelSize: 14
+                        }
+
+                        MouseArea {
+                            id: usageMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.showUsage = !root.showUsage
+                        }
+
+                        ToolTip {
+                            visible: usageMouse.containsMouse
+                            text: root.showUsage ? "Back to chat" : "Usage statistics"
+                            delay: 500
+                        }
+                    }
+                }
             }
 
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                visible: engine.connectionStatus !== 1
 
-                ColumnLayout {
-                    anchors.centerIn: parent
-                    spacing: 8
+                ChatView {
+                    anchors.fill: parent
+                    visible: !root.showUsage && engine.connectionStatus === 1
+                    messages: messageModel
+                    loading: engine.loading
+                    loadingText: engine.selectedModelName ? "Thinking with " + engine.selectedModelName : "Thinking"
+                }
 
-                    Label {
-                        Layout.alignment: Qt.AlignHCenter
-                        text: engine.connectionStatus === 0 ? "Connecting..." : "Server offline"
-                        color: engine.connectionStatus === 0 ? popupOuter.themeOrange : popupOuter.themeRed
-                        font.pixelSize: 14
-                    }
+                Item {
+                    anchors.fill: parent
+                    visible: !root.showUsage && engine.connectionStatus !== 1
 
-                    Button {
-                        Layout.alignment: Qt.AlignHCenter
-                        visible: engine.connectionStatus === 2
-                        text: "Connect"
-                        onClicked: engine.checkHealth()
-
-                        background: Rectangle {
-                            color: parent.hovered ? popupOuter.themeGreen : Qt.darker(popupOuter.themeGreen, 1.1)
-                            radius: 4
-                        }
-
-                        contentItem: Label {
-                            text: parent.text
-                            color: popupOuter.themeHighlightedText
-                            font.pixelSize: 14
-                            font.bold: true
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                    }
-
-                    Row {
-                        Layout.alignment: Qt.AlignHCenter
-                        visible: engine.connectionStatus === 2
+                    ColumnLayout {
+                        anchors.centerIn: parent
                         spacing: 8
 
-                        Rectangle {
-                            width: 28
-                            height: 28
-                            radius: 4
-                            color: srvStartBtn.containsMouse ? popupOuter.themeGreen : Qt.darker(popupOuter.themeGreen, 1.1)
+                        Label {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: engine.connectionStatus === 0 ? "Connecting..." : "Server offline"
+                            color: engine.connectionStatus === 0 ? popupOuter.themeOrange : popupOuter.themeRed
+                            font.pixelSize: 14
+                        }
 
-                            Label {
-                                anchors.centerIn: parent
-                                text: processManager.serverRunning ? "\u21BB" : "\u25B6"
-                                color: "white"
-                                font.pixelSize: 13
+                        Button {
+                            Layout.alignment: Qt.AlignHCenter
+                            visible: engine.connectionStatus === 2
+                            text: "Connect"
+                            onClicked: engine.checkHealth()
+
+                            background: Rectangle {
+                                color: parent.hovered ? popupOuter.themeGreen : Qt.darker(popupOuter.themeGreen, 1.1)
+                                radius: 4
                             }
 
-                            MouseArea {
-                                id: srvStartBtn
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    if (processManager.serverRunning)
-                                        processManager.restartServer();
-                                    else
-                                        processManager.startServer();
+                            contentItem: Label {
+                                text: parent.text
+                                color: popupOuter.themeHighlightedText
+                                font.pixelSize: 14
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+
+                        Row {
+                            Layout.alignment: Qt.AlignHCenter
+                            visible: engine.connectionStatus === 2
+                            spacing: 8
+
+                            Rectangle {
+                                width: 28
+                                height: 28
+                                radius: 4
+                                color: srvStartBtn.containsMouse ? popupOuter.themeGreen : Qt.darker(popupOuter.themeGreen, 1.1)
+
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: processManager.serverRunning ? "\u21BB" : "\u25B6"
+                                    color: "white"
+                                    font.pixelSize: 13
+                                }
+
+                                MouseArea {
+                                    id: srvStartBtn
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (processManager.serverRunning)
+                                            processManager.restartServer();
+                                        else
+                                            processManager.startServer();
+                                    }
+                                }
+
+                                ToolTip {
+                                    visible: srvStartBtn.containsMouse
+                                    text: processManager.serverRunning ? "Restart server" : "Start server"
+                                    delay: 500
                                 }
                             }
 
-                            ToolTip {
-                                visible: srvStartBtn.containsMouse
-                                text: processManager.serverRunning ? "Restart server" : "Start server"
-                                delay: 600
-                            }
-                        }
+                            Rectangle {
+                                width: 28
+                                height: 28
+                                radius: 4
+                                visible: processManager.serverRunning
+                                color: srvStopBtn.containsMouse ? Qt.darker(popupOuter.themeRed, 1.1) : popupOuter.themeRed
 
-                        Rectangle {
-                            width: 28
-                            height: 28
-                            radius: 4
-                            visible: processManager.serverRunning
-                            color: srvStopBtn.containsMouse ? Qt.darker(popupOuter.themeRed, 1.1) : popupOuter.themeRed
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: "\u25A0"
+                                    color: popupOuter.themeHighlightedText
+                                    font.pixelSize: 13
+                                }
 
-                            Label {
-                                anchors.centerIn: parent
-                                text: "\u25A0"
-                                color: popupOuter.themeHighlightedText
-                                font.pixelSize: 13
-                            }
+                                MouseArea {
+                                    id: srvStopBtn
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: processManager.stopServer()
+                                }
 
-                            MouseArea {
-                                id: srvStopBtn
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: processManager.stopServer()
-                            }
-
-                            ToolTip {
-                                visible: srvStopBtn.containsMouse
-                                text: "Stop server"
-                                delay: 600
+                                ToolTip {
+                                    visible: srvStopBtn.containsMouse
+                                    text: "Stop server"
+                                    delay: 500
+                                }
                             }
                         }
                     }
+                }
+
+                UsageDashboard {
+                    anchors.fill: parent
+                    visible: root.showUsage
+                    usageTracker: usageTracker
+                    themeBg: popupOuter.themeBg
+                    themeText: popupOuter.themeText
+                    themeMuted: Qt.darker(popupOuter.themeText, 1.5)
+                    themeAccent: popupOuter.themeHighlight
+
+                    onCloseRequested: root.showUsage = false
                 }
             }
 
             InputBar {
                 Layout.fillWidth: true
+                visible: !root.showUsage
                 enabled: engine.connectionStatus === 1
                 loading: engine.loading
                 connectionStatus: engine.connectionStatus

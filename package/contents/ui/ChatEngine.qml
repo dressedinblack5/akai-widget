@@ -29,9 +29,8 @@ Item {
     property real _lastSseActivity: 0
     property int healthRetryCount: 0
     property var seenMessageIds: ({})
-    property int promptSeq: 0
-    property string _lastUserMessageId: ""
     property var modelSelectorRef: null
+    property var usageTracker: null
     property string savedModel: ""
     property int _sessionGen: 0
     property int _pollCount: 0
@@ -120,10 +119,17 @@ Item {
     }
 
     function handleSSEEvent(event) {
-        if (!event || !event.type) return;
+        if (!event) return;
 
         var type = event.type;
         var props = event.payload || {};
+
+        if (!type && props && props.type) {
+            type = props.type;
+            props = props.properties || {};
+        }
+        if (!type) return;
+
         console.log("[ChatEngine] SSE event:", type);
 
         if (type === "session.error") {
@@ -139,8 +145,9 @@ Item {
             return;
         }
 
-        if (type === "session.idle") {
-            console.log("[ChatEngine] session.idle, loading:", engine.loading);
+        if (type === "session.idle" || (type === "session.status" && props.status && props.status.type === "idle")) {
+            if (props.sessionID && props.sessionID !== engine.sessionId) return;
+            console.log("[ChatEngine] session idle (type:", type, "), loading:", engine.loading);
             if (engine.loading) {
                 fallbackPollerTimer.stop();
                 responseTimeoutTimer.stop();
@@ -201,7 +208,7 @@ Item {
                 }
             }
         }
-        var priority = ["opencode-go", "ollama", "opencode", "google", "github-copilot", "horde"];
+        var priority = ["opencode", "opencode-go", "ollama", "google", "github-copilot", "horde"];
         for (var pi = 0; pi < priority.length; pi++) {
             for (var mi = 0; mi < models.length; mi++) {
                 if (models[mi].value.indexOf(priority[pi] + "/") === 0) {
@@ -233,7 +240,6 @@ Item {
             return;
         }
         engine.loading = true;
-        engine.promptSeq++;
         engine.createSession(function(success) {
             console.log("[ChatEngine] createSession callback, success:", success);
             if (success) engine.doSendMessage(text);
@@ -267,6 +273,9 @@ Item {
         engine.stallCount = 0;
         engine._lastSseActivity = Date.now();
 
+        if (engine.usageTracker)
+            engine.usageTracker.beginRequest(engine.selectedProviderId, engine.selectedModelId);
+
         var curValue = engine.selectedProviderId + "/" + engine.selectedModelId;
         var idx = engine.recentModelValues.indexOf(curValue);
         if (idx >= 0) engine.recentModelValues.splice(idx, 1);
@@ -280,19 +289,18 @@ Item {
         var r2 = Math.random().toString(36).substring(2, 22);
         var r3 = Math.random().toString(36).substring(2, 22);
         var parts = [
-            {"id": "prt_" + now + "000" + r0, "type": "text", "text": "Be concise. Answer in 1-2 sentences. Do not repeat the question. Do not show your thought process.", "synthetic": true}
+            {"id": "prt_" + now + "000" + r0, "type": "text", "text": "Be concise. Answer in 1-2 sentences. Do not repeat the question. Do not show your thought process."}
         ];
         if (history.length > 0) {
-            parts.push({"id": "prt_" + now + "001" + r3, "type": "text", "text": "Previous conversation:\n" + history + "\n\nCurrent message:", "synthetic": true});
+            parts.push({"id": "prt_" + now + "001" + r3, "type": "text", "text": "Previous conversation:\n" + history + "\n\nCurrent message:"});
         }
         parts.push({"id": "prt_" + now + "002" + r2, "type": "text", "text": text});
         var body = {
             "model": {"modelID": engine.selectedModelId, "providerID": engine.selectedProviderId},
             "messageID": "msg_" + now + "001" + r1,
+            "system": "You are a helpful, concise chatbot. Do NOT use any tools. Answer conversationally with text only.",
             "parts": parts
         };
-        engine._lastUserMessageId = body.messageID;
-
         if (sseHeartbeatTimer.running) sseHeartbeatTimer.restart();
         responseTimeoutTimer.start();
         fallbackPollerTimer.start();
@@ -319,6 +327,7 @@ Item {
                 responseTimeoutTimer.stop();
                 fallbackPollerTimer.stop();
                 engine.stallCount = 0;
+                if (engine.usageTracker) engine.usageTracker.endRequest(false);
                 engine.addMessage("assistant", msg);
             }
         });
@@ -337,6 +346,7 @@ Item {
             engine.sseBuffer = "";
         }
 
+        if (engine.usageTracker) engine.usageTracker.endRequest(false);
         engine.addMessage("assistant", "_[stopped]_");
         engine.loading = false;
         responseTimeoutTimer.stop();
@@ -349,7 +359,6 @@ Item {
         engine.seenMessageIds = {};
         engine.stallCount = 0;
         engine.sessionId = "";
-        engine.promptSeq++;
 
         responseTimeoutTimer.stop();
         fallbackPollerTimer.stop();
@@ -368,8 +377,12 @@ Item {
         engine.active = isActive === true;
         if (isActive) {
             sseReaderTimer.running = true;
-            if (!engine.sseXhr && engine.connectionStatus === 1)
-                engine.connectSSE();
+            if (!engine.sseXhr) {
+                if (engine.connectionStatus === 1)
+                    engine.connectSSE();
+                else
+                    engine.checkHealth();
+            }
         } else {
             if (!engine.loading) {
                 sseReaderTimer.running = false;
@@ -384,16 +397,16 @@ Item {
 
     Timer {
         id: sseReconnectTimer
-        interval: Math.min(2000 * Math.pow(2, engine.sseFailCount), 60000)
+        interval: Math.min(2000 * Math.pow(2, Math.min(engine.sseFailCount, 5)), 60000)
         repeat: false
         onTriggered: {
-            if (engine.sseFailCount >= 10) {
-                engine.connectionStatus = 2;
-                return;
+            if (!engine.active) return;
+            if (engine.sseFailCount >= 5) {
+                engine.connectionStatus = 0;
+                engine.checkHealth();
+            } else {
+                engine.connectSSE();
             }
-            if (engine.connectionStatus !== 1) return;
-            if (engine.sseFailCount >= 3) engine.checkHealth();
-            else engine.connectSSE();
         }
     }
 
@@ -489,6 +502,7 @@ Item {
             if (error || !data) {
                 if (isFinal) {
                     engine.loading = false;
+                    if (engine.usageTracker) engine.usageTracker.endRequest(false);
                     engine.addMessage("assistant", "No response from " + engine.selectedModelName + " (connection failed).");
                 }
                 return;
@@ -498,6 +512,7 @@ Item {
             if (!Array.isArray(msgs)) {
                 if (isFinal) {
                     engine.loading = false;
+                    if (engine.usageTracker) engine.usageTracker.endRequest(false);
                     engine.addMessage("assistant", "No response from " + engine.selectedModelName + ".");
                 }
                 return;
@@ -523,6 +538,7 @@ Item {
                         responseTimeoutTimer.stop();
                         fallbackPollerTimer.stop();
                         engine.stallCount = 0;
+                        if (engine.usageTracker) engine.usageTracker.endRequest(true);
                         return;
                     }
                 }
@@ -530,6 +546,7 @@ Item {
 
             if (isFinal) {
                 engine.loading = false;
+                if (engine.usageTracker) engine.usageTracker.endRequest(false);
                 engine.addMessage("assistant", "No response from " + engine.selectedModelName + ".");
             }
         });
@@ -550,6 +567,7 @@ Item {
                 engine.loading = false;
                 responseTimeoutTimer.stop();
                 fallbackPollerTimer.stop();
+                if (engine.usageTracker) engine.usageTracker.endRequest(false);
                 engine.addMessage("assistant", "No response from " + engine.selectedModelName + " (timeout after 60s).");
                 return;
             }
@@ -567,6 +585,7 @@ Item {
                 engine.loading = false;
                 fallbackPollerTimer.stop();
                 engine.stallCount = 0;
+                if (engine.usageTracker) engine.usageTracker.endRequest(false);
                 engine.addMessage("assistant", "No response from " + engine.selectedModelName + " (60s timeout). Try a different model.");
             }
         }
