@@ -22,9 +22,7 @@ Item {
 
     property var sseXhr: null
     property string sseBuffer: ""
-    property string sseResponseText: ""
-    property bool streaming: false
-    property int streamIndex: -1
+    property string sseLineRemainder: ""
     property int stallCount: 0
     property int sseFailCount: 0
     property bool _sseErrorShown: false
@@ -36,13 +34,14 @@ Item {
     property var modelSelectorRef: null
     property string savedModel: ""
     property int _sessionGen: 0
+    property int _pollCount: 0
 
     signal messageAdded(string role, string text, string time)
 
-    function httpRequest(method, path, body, callback) {
+    function httpRequest(method, path, body, callback, timeout) {
         var xhr = new XMLHttpRequest();
         xhr.open(method, engine.serverUrl + path, true);
-        xhr.timeout = 8000;
+        xhr.timeout = timeout || 8000;
         if (body)
             xhr.setRequestHeader("Content-Type", "application/json");
         var safeCallback = function(error, data, status) {
@@ -66,6 +65,8 @@ Item {
 
     function checkHealth() {
         engine.connectionStatus = 0;
+        if (engine.processManager && !engine.processManager.serverRunning)
+            engine.processManager.startServer();
         engine.httpRequest("GET", "/global/health", null, function(error, data, status) {
             if (!error && data && (data.healthy || data.status === "ok")) {
                 engine.connectionStatus = 1;
@@ -75,20 +76,17 @@ Item {
                 engine.connectSSE();
                 engine.fetchProviders();
             } else {
-                if (engine.processManager && engine.processManager.serverRunning && engine.healthRetryCount < 5) {
-                    engine.healthRetryCount++;
+                engine.healthRetryCount++;
+                if (engine.healthRetryCount < 30)
                     healthRetryTimer.start();
-                } else {
+                else
                     engine.connectionStatus = 2;
-                    engine.healthRetryCount = 0;
-                    if (engine.processManager && !engine.processManager.serverRunning)
-                        engine.processManager.startServer();
-                }
             }
-        });
+        }, 3000);
     }
 
     function connectSSE() {
+        console.log("[ChatEngine] connectSSE called, aborting existing connection:", !!engine.sseXhr);
         if (engine.sseXhr) {
             engine.sseXhr.abort();
             engine.sseXhr = null;
@@ -96,14 +94,17 @@ Item {
         var xhr = new XMLHttpRequest();
         engine.sseXhr = xhr;
         engine.sseBuffer = "";
+        engine.sseLineRemainder = "";
         engine._lastSseActivity = Date.now();
+        console.log("[ChatEngine] SSE buffer reset, opening connection to:", engine.serverUrl + "/global/event");
         xhr.open("GET", engine.serverUrl + "/global/event", true);
         xhr.timeout = 0;
         xhr.onerror = function() {
             if (!engine || engine.sseXhr !== xhr) return;
+            console.log("[ChatEngine] SSE error");
             engine.sseXhr = null;
             engine.sseFailCount++;
-            if (engine.sseFailCount >= 3 && !engine._sseErrorShown && engine.active) {
+            if (engine.sseFailCount >= 5 && !engine._sseErrorShown && engine.active) {
                 engine._sseErrorShown = true;
                 engine.addMessage("assistant", "Live updates disconnected. Responses will use fallback polling.");
             }
@@ -111,19 +112,19 @@ Item {
         };
         xhr.onload = function() {
             if (!engine || engine.sseXhr !== xhr) return;
+            console.log("[ChatEngine] SSE connection ended");
             engine.sseXhr = null;
-            engine.sseFailCount++;
             sseReconnectTimer.start();
         };
         xhr.send(null);
     }
 
     function handleSSEEvent(event) {
-        var payload = event.payload || event;
-        if (!payload || !payload.type) return;
+        if (!event || !event.type) return;
 
-        var type = payload.type;
-        var props = payload.properties || {};
+        var type = event.type;
+        var props = event.payload || {};
+        console.log("[ChatEngine] SSE event:", type);
 
         if (type === "session.error") {
             if (engine.loading) {
@@ -134,90 +135,28 @@ Item {
             }
             var sessErr = props.error || {};
             var errMsg = (sessErr.data && sessErr.data.message) || sessErr.name || "Session error";
-            finalizeResponse("Error: " + errMsg, true);
+            engine.addMessage("assistant", "Error: " + errMsg);
             return;
         }
 
-        var evtSid = props.sessionID || "";
-        if (evtSid !== engine.sessionId) return;
-
-        if (type === "message.part.delta") {
-            if (!engine.loading) return;
-            engine.sseResponseText += props.delta || "";
-            engine.stallCount = 0;
-
-            if (!engine.streaming) {
-                engine.streaming = true;
-                engine.streamIndex = engine.messageModel.count;
-                engine.messageModel.append({"role": "assistant", "text": engine.sseResponseText, "time": ""});
-            } else if (engine.streamIndex >= 0) {
-                engine.messageModel.setProperty(engine.streamIndex, "text", engine.sseResponseText);
-            }
-            return;
-        }
-
-        if (type === "message.part.updated") {
-            if (!engine.loading) return;
-            var part = props.part || {};
-            if (part.synthetic) return;
-            if (part.messageID === engine._lastUserMessageId) return;
-            if (part.type === "text" && part.text && part.text.length > 0) {
-                engine.sseResponseText = part.text;
+        if (type === "session.idle") {
+            console.log("[ChatEngine] session.idle, loading:", engine.loading);
+            if (engine.loading) {
+                fallbackPollerTimer.stop();
+                responseTimeoutTimer.stop();
                 engine.stallCount = 0;
-
-                if (!engine.streaming) {
-                    engine.streaming = true;
-                    engine.streamIndex = engine.messageModel.count;
-                    engine.messageModel.append({"role": "assistant", "text": part.text, "time": ""});
-                } else if (engine.streamIndex >= 0) {
-                    engine.messageModel.setProperty(engine.streamIndex, "text", part.text);
-                }
+                engine.pollForResponse(true);
             }
             return;
-        }
-
-        if (type === "session.idle" || (type === "message.updated" && props.info && props.info.finish === "stop")) {
-            var finalText = props.info && props.info.text ? props.info.text : engine.sseResponseText;
-            var finalMsgId = (props.info && props.info.id) || "";
-            finalizeResponse(finalText, false, finalMsgId);
-            return;
-        }
-
-        if (type === "error" || type === "message.error" || type === "provider.error" || type === "rate_limit") {
-            var errMsg = props.message || props.error || (props.data && props.data.message) || "An error occurred";
-            var code = props.code || "";
-            var prefix = "Error";
-            if (type === "rate_limit" || (code && code.indexOf("rate") >= 0))
-                prefix = "Rate limited";
-            else if (type === "provider.error")
-                prefix = "Provider error";
-            finalizeResponse(prefix + ": " + errMsg, true);
         }
     }
 
-    function finalizeResponse(text, isError, msgId) {
-        if (!engine.loading) return;
-
-        if (msgId) engine.seenMessageIds[msgId] = true;
-
-        engine.loading = false;
-        responseTimeoutTimer.stop();
-        fallbackPollerTimer.stop();
-        engine.stallCount = 0;
-
-        if (engine.streaming && engine.streamIndex >= 0) {
-            if (text) {
-                engine.messageModel.setProperty(engine.streamIndex, "text", text);
-            } else {
-                engine.messageModel.remove(engine.streamIndex);
-            }
-        } else if (text) {
-            engine.addMessage("assistant", text);
-        }
-
-        engine.streaming = false;
-        engine.streamIndex = -1;
-        engine.sseResponseText = "";
+    function addMessage(role, text) {
+        var now = new Date();
+        var h = now.getHours().toString().padStart(2, '0');
+        var m = now.getMinutes().toString().padStart(2, '0');
+        engine.messageModel.append({"role": role, "text": text, "time": h + ":" + m});
+        engine.messageAdded(role, text, h + ":" + m);
     }
 
     function fetchProviders() {
@@ -288,28 +227,43 @@ Item {
     }
 
     function sendMessage(text) {
-        if (!engine.sessionId) {
-            engine.loading = true;
-            engine.promptSeq++;
-            engine.createSession(function(success) {
-                if (success) engine.doSendMessage(text);
-                else {
-                    engine.loading = false;
-                    engine.addMessage("assistant", "Error: Could not create session. Is the server running?");
-                }
-            });
-        } else {
-            engine.promptSeq++;
-            engine.doSendMessage(text);
+        console.log("[ChatEngine] sendMessage called, loading:", engine.loading);
+        if (engine.loading) {
+            console.log("[ChatEngine] sendMessage: blocked, already loading");
+            return;
         }
+        engine.loading = true;
+        engine.promptSeq++;
+        engine.createSession(function(success) {
+            console.log("[ChatEngine] createSession callback, success:", success);
+            if (success) engine.doSendMessage(text);
+            else {
+                engine.loading = false;
+                engine.addMessage("assistant", "Error: Could not create session. Is the server running?");
+            }
+        });
+    }
+
+    function buildHistory() {
+        if (!engine.messageModel || engine.messageModel.count === 0) return "";
+        var lines = [];
+        var start = Math.max(0, engine.messageModel.count - 20);
+        for (var i = start; i < engine.messageModel.count; i++) {
+            var m = engine.messageModel.get(i);
+            if (m.role === "user") lines.push("User: " + m.text);
+            else if (m.role === "assistant") lines.push("Assistant: " + m.text);
+        }
+        return lines.join("\n");
     }
 
     function doSendMessage(text) {
+        console.log("[ChatEngine] doSendMessage called, text length:", text.length);
+        var history = buildHistory();
         engine.addMessage("user", text);
+        console.log("[ChatEngine] User message added to model");
         engine.loading = true;
-        engine.streaming = false;
-        engine.streamIndex = -1;
-        engine.sseResponseText = "";
+        engine._pollCount = 0;
+        console.log("[ChatEngine] loading set to true");
         engine.stallCount = 0;
         engine._lastSseActivity = Date.now();
 
@@ -324,13 +278,18 @@ Item {
         var r0 = Math.random().toString(36).substring(2, 22);
         var r1 = Math.random().toString(36).substring(2, 22);
         var r2 = Math.random().toString(36).substring(2, 22);
+        var r3 = Math.random().toString(36).substring(2, 22);
+        var parts = [
+            {"id": "prt_" + now + "000" + r0, "type": "text", "text": "Be concise. Answer in 1-2 sentences. Do not repeat the question. Do not show your thought process.", "synthetic": true}
+        ];
+        if (history.length > 0) {
+            parts.push({"id": "prt_" + now + "001" + r3, "type": "text", "text": "Previous conversation:\n" + history + "\n\nCurrent message:", "synthetic": true});
+        }
+        parts.push({"id": "prt_" + now + "002" + r2, "type": "text", "text": text});
         var body = {
             "model": {"modelID": engine.selectedModelId, "providerID": engine.selectedProviderId},
             "messageID": "msg_" + now + "001" + r1,
-            "parts": [
-                {"id": "prt_" + now + "000" + r0, "type": "text", "text": "Be concise. Answer in 1-2 sentences. Do not repeat the question. Do not show your thought process.", "synthetic": true},
-                {"id": "prt_" + now + "002" + r2, "type": "text", "text": text}
-            ]
+            "parts": parts
         };
         engine._lastUserMessageId = body.messageID;
 
@@ -339,6 +298,7 @@ Item {
         fallbackPollerTimer.start();
 
         engine.httpRequest("POST", "/session/" + engine.sessionId + "/prompt_async", body, function(error, data, status) {
+            console.log("[ChatEngine] prompt_async response, error:", error, "status:", status);
             if (!engine.loading) return;
             if (error) {
                 var msg = "Error: ";
@@ -355,17 +315,13 @@ Item {
                     if (data.error) msg += " (" + data.error + ")";
                     else if (data.message) msg += " (" + data.message + ")";
                 }
-                finalizeResponse(msg, true);
+                engine.loading = false;
+                responseTimeoutTimer.stop();
+                fallbackPollerTimer.stop();
+                engine.stallCount = 0;
+                engine.addMessage("assistant", msg);
             }
         });
-    }
-
-    function addMessage(role, text) {
-        var now = new Date();
-        var h = now.getHours().toString().padStart(2, '0');
-        var m = now.getMinutes().toString().padStart(2, '0');
-        engine.messageModel.append({"role": role, "text": text, "time": h + ":" + m});
-        engine.messageAdded(role, text, h + ":" + m);
     }
 
     function stopGeneration() {
@@ -382,14 +338,14 @@ Item {
         }
 
         engine.addMessage("assistant", "_[stopped]_");
-        finalizeResponse("", true);
+        engine.loading = false;
+        responseTimeoutTimer.stop();
+        fallbackPollerTimer.stop();
+        engine.stallCount = 0;
     }
 
     function resetChat() {
         engine.loading = false;
-        engine.streaming = false;
-        engine.streamIndex = -1;
-        engine.sseResponseText = "";
         engine.seenMessageIds = {};
         engine.stallCount = 0;
         engine.sessionId = "";
@@ -452,10 +408,12 @@ Item {
         id: sseHeartbeatTimer
         interval: 15000
         repeat: true
-        running: engine.sseXhr !== null
+        running: engine.connectionStatus === 1
         onTriggered: {
-            if (engine.sseXhr && (Date.now() - engine._lastSseActivity) > 15000 && engine.loading)
-                engine.connectSSE();
+            if (!engine.sseXhr && engine.connectionStatus === 1) {
+                console.log("[ChatEngine] SSE heartbeat: no connection, starting reconnect");
+                sseReconnectTimer.start();
+            }
         }
     }
 
@@ -466,14 +424,22 @@ Item {
         running: true
         onTriggered: {
             var xhr = engine.sseXhr;
-            if (!xhr) return;
-            if (xhr.readyState !== 3 && xhr.readyState !== 4) return;
+            if (!xhr) {
+                console.log("[ChatEngine] SSE reader: no xhr, skipping");
+                return;
+            }
+            if (xhr.readyState !== 3 && xhr.readyState !== 4) {
+                console.log("[ChatEngine] SSE reader: wrong readyState:", xhr.readyState);
+                return;
+            }
 
             var full = xhr.responseText;
             if (full.length === engine.sseBuffer.length) return;
 
             var newData = full.substring(engine.sseBuffer.length);
             engine.sseBuffer = full;
+
+            console.log("[ChatEngine] SSE reader: newData length:", newData.length, "buffer length:", engine.sseBuffer.length);
 
             if (newData.length > 0) {
                 engine.sseFailCount = 0;
@@ -482,83 +448,113 @@ Item {
                 if (sseHeartbeatTimer.running) sseHeartbeatTimer.restart();
             }
 
-            var lines = newData.split(/\r?\n/);
+            var raw = engine.sseLineRemainder + newData;
+            engine.sseLineRemainder = "";
+            var lines = raw.split(/\r?\n/);
+
+            if (raw.length > 0 && raw[raw.length - 1] !== "\n") {
+                engine.sseLineRemainder = lines.pop();
+            } else {
+                lines.pop();
+            }
+
+            console.log("[ChatEngine] SSE reader: processing", lines.length, "lines");
+
             for (var i = 0; i < lines.length; i++) {
                 if (lines[i].indexOf("data: ") === 0) {
                     try {
-                        engine.handleSSEEvent(JSON.parse(lines[i].substring(6)));
-                    } catch (e) {}
+                        var eventData = JSON.parse(lines[i].substring(6));
+                        console.log("[ChatEngine] SSE reader: parsed event, type:", eventData.type);
+                        engine.handleSSEEvent(eventData);
+                    } catch (e) {
+                        console.log("[ChatEngine] SSE reader: JSON parse error:", e.message, "line:", lines[i].substring(0, 100));
+                    }
                 }
             }
 
             if (xhr.readyState === 4) {
                 if (engine.sseXhr !== xhr) return;
+                console.log("[ChatEngine] SSE reader: connection closed");
                 engine.sseXhr = null;
                 sseReconnectTimer.start();
             }
         }
     }
 
+    function pollForResponse(isFinal) {
+        if (!engine.sessionId) return;
+        engine.httpRequest("GET", "/session/" + engine.sessionId + "/message?limit=5", null, function(error, data, status) {
+            if (!engine.loading) return;
+
+            if (error || !data) {
+                if (isFinal) {
+                    engine.loading = false;
+                    engine.addMessage("assistant", "No response from " + engine.selectedModelName + " (connection failed).");
+                }
+                return;
+            }
+
+            var msgs = data.data || data;
+            if (!Array.isArray(msgs)) {
+                if (isFinal) {
+                    engine.loading = false;
+                    engine.addMessage("assistant", "No response from " + engine.selectedModelName + ".");
+                }
+                return;
+            }
+
+            for (var i = 0; i < msgs.length; i++) {
+                var msg = msgs[i];
+                if (!msg) continue;
+                var msgId = msg.info ? msg.info.id : "";
+                var role = msg.info ? msg.info.role : "";
+
+                if (role !== "assistant") continue;
+                if (msgId && engine.seenMessageIds[msgId]) continue;
+
+                var parts = msg.parts || [];
+                for (var j = 0; j < parts.length; j++) {
+                    var pt = parts[j];
+                    if (pt.type === "text" && pt.text && pt.text.length > 0 && !pt.synthetic) {
+                        console.log("[ChatEngine] Found assistant message, length:", pt.text.length);
+                        if (msgId) engine.seenMessageIds[msgId] = true;
+                        engine.addMessage("assistant", pt.text);
+                        engine.loading = false;
+                        responseTimeoutTimer.stop();
+                        fallbackPollerTimer.stop();
+                        engine.stallCount = 0;
+                        return;
+                    }
+                }
+            }
+
+            if (isFinal) {
+                engine.loading = false;
+                engine.addMessage("assistant", "No response from " + engine.selectedModelName + ".");
+            }
+        });
+    }
+
     Timer {
         id: fallbackPollerTimer
-        interval: 2000
+        interval: 1500
         repeat: true
         onTriggered: {
             if (!engine.loading || !engine.sessionId) return;
+            engine._pollCount++;
+            console.log("[ChatEngine] Poll tick", engine._pollCount, "loading:", engine.loading);
 
-            engine.httpRequest("GET", "/session/" + engine.sessionId + "/message?limit=10", null, function(error, data, status) {
-                if (!engine.loading) return;
+            engine.stallCount++;
+            if (engine.stallCount >= 40) {
+                engine.stallCount = 0;
+                engine.loading = false;
+                responseTimeoutTimer.stop();
+                fallbackPollerTimer.stop();
+                engine.addMessage("assistant", "No response from " + engine.selectedModelName + " (timeout after 60s).");
+                return;
+            }
 
-                if (error || !data) {
-                    engine.stallCount++;
-                    if (engine.stallCount >= 3) {
-                        engine.stallCount = 0;
-                        var tail = data && (data.error || data.message) ? " (" + (data.error || data.message) + ")" : "";
-                        finalizeResponse("No response from " + engine.selectedModelName + " (poll failed" + tail + ").", true);
-                    }
-                    return;
-                }
-
-                var msgs = data.data || data;
-                if (!Array.isArray(msgs)) return;
-
-                var foundNew = false;
-                for (var i = 0; i < msgs.length; i++) {
-                    var msg = msgs[i];
-                    if (!msg) continue;
-                    var msgId = msg.info ? msg.info.id : "";
-                    var role = msg.info ? msg.info.role : "";
-                    if (role !== "assistant") continue;
-                    if (msgId && engine.seenMessageIds[msgId]) continue;
-
-                    var parts = msg.parts || [];
-                    var hasText = false;
-                    for (var j = 0; j < parts.length; j++) {
-                        var pt = parts[j];
-                        if (pt.type === "text" && pt.text && pt.text.length > 0) {
-                            hasText = true;
-                            foundNew = true;
-                            engine.stallCount = 0;
-                            if (msgId) engine.seenMessageIds[msgId] = true;
-                            finalizeResponse(pt.text, false);
-                            return;
-                        }
-                    }
-                    if (!hasText) {
-                        foundNew = true;
-                        engine.stallCount = 0;
-                        if (msgId) engine.seenMessageIds[msgId] = true;
-                    }
-                }
-
-                if (!foundNew) {
-                    engine.stallCount++;
-                    if (engine.stallCount >= 15) {
-                        engine.stallCount = 0;
-                        finalizeResponse("No response from " + engine.selectedModelName + " (stalled after 30s). Try a different model.", true);
-                    }
-                }
-            });
+            engine.pollForResponse(false);
         }
     }
 
@@ -567,7 +563,12 @@ Item {
         interval: 60000
         repeat: false
         onTriggered: {
-            finalizeResponse("No response from " + engine.selectedModelName + " (60s timeout). Try a different model.", true);
+            if (engine.loading) {
+                engine.loading = false;
+                fallbackPollerTimer.stop();
+                engine.stallCount = 0;
+                engine.addMessage("assistant", "No response from " + engine.selectedModelName + " (60s timeout). Try a different model.");
+            }
         }
     }
 }

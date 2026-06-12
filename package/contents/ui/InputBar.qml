@@ -29,6 +29,7 @@ RowLayout {
     Layout.fillWidth: true
 
     function sendMessage() {
+        if (root.loading) return;
         var text = inputField.text.trim();
         if (text.length > 0) {
             inputField.text = "";
@@ -53,7 +54,7 @@ RowLayout {
         Keys.onReturnPressed: function(event) {
             if (!(event.modifiers & Qt.ShiftModifier)) {
                 event.accepted = true;
-                root.sendMessage();
+                if (!root.loading) root.sendMessage();
             }
         }
 
@@ -95,7 +96,7 @@ RowLayout {
         implicitWidth: 34
         implicitHeight: 34
         visible: root.enabled
-        enabled: inputField.text.trim().length > 0
+        enabled: inputField.text.trim().length > 0 && !root.loading
         text: "\u2191"
         onClicked: root.sendMessage()
 

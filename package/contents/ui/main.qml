@@ -2,6 +2,7 @@ import QtQml.Models
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import "code"
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
@@ -15,6 +16,26 @@ PlasmoidItem {
     preferredRepresentation: Plasmoid.formFactor === PlasmaCore.Types.Planar ? fullRepresentation : compactRepresentation
     Plasmoid.backgroundHints: PlasmaCore.Types.StandardBackground
     Plasmoid.icon: "dialog-messages"
+
+    property bool pinned: false
+
+    function togglePin() {
+        pinned = !pinned;
+        plasmoid.configuration.pinned = pinned;
+        applyPinState();
+    }
+
+    function applyPinState() {
+        var win = root.Window.window;
+        if (win) {
+            if (pinned) {
+                win.flags |= Qt.WindowStaysOnTopHint;
+                win.visibility = Window.Windowed;
+            } else {
+                win.flags &= ~Qt.WindowStaysOnTopHint;
+            }
+        }
+    }
 
     ChatEngine {
         id: engine
@@ -80,9 +101,16 @@ PlasmoidItem {
             plasmoid.configuration.popupWidth = Math.round(Screen.width * 0.5);
             plasmoid.configuration.popupHeight = Math.round(Screen.height * 0.85);
         }
+        if (plasmoid.configuration.pinned) {
+            pinned = true;
+            Qt.callLater(applyPinState);
+        }
     }
 
-    onExpandedChanged: engine.setActive(root.expanded)
+    onExpandedChanged: {
+        engine.setActive(root.expanded);
+        if (root.expanded && pinned) Qt.callLater(applyPinState);
+    }
 
     compactRepresentation: Item {
         implicitWidth: 32
@@ -187,6 +215,35 @@ PlasmoidItem {
                                 }
                             }
                             plasmoid.configuration.lastModel = modelId;
+                        }
+                    }
+
+                    Rectangle {
+                        id: pinBtn
+                        implicitWidth: 24
+                        implicitHeight: 24
+                        radius: 4
+                        color: pinMouse.containsMouse ? Qt.darker(popupOuter.themeHighlight, 1.1) : "transparent"
+
+                        Label {
+                            anchors.centerIn: parent
+                            text: root.pinned ? "\u25C9" : "\u25CB"
+                            color: root.pinned ? popupOuter.themeHighlight : (pinMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText)
+                            font.pixelSize: 14
+                        }
+
+                        MouseArea {
+                            id: pinMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.togglePin()
+                        }
+
+                        ToolTip {
+                            visible: pinMouse.containsMouse
+                            text: root.pinned ? "Unpin window" : "Pin window (keep above)"
+                            delay: 500
                         }
                     }
 

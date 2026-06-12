@@ -36,13 +36,12 @@ ScrollView {
 
         onContentHeightChanged: {
             if (root.loading && !_userScrolledUp)
-                positionViewAtEnd();
+                Qt.callLater(positionViewAtEnd);
         }
 
         onCountChanged: {
-            _userScrolledUp = false;
             if (count > 0)
-                positionViewAtEnd();
+                Qt.callLater(positionViewAtEnd);
         }
 
         delegate: MessageBubble {
