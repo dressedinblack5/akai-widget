@@ -35,6 +35,7 @@ Item {
     property string _lastUserMessageId: ""
     property var modelSelectorRef: null
     property string savedModel: ""
+    property int _sessionGen: 0
 
     signal messageAdded(string role, string text, string time)
 
@@ -73,7 +74,6 @@ Item {
                 engine.healthRetryCount = 0;
                 engine.connectSSE();
                 engine.fetchProviders();
-                engine.createSession(function(success) {});
             } else {
                 if (engine.processManager && engine.processManager.serverRunning && engine.healthRetryCount < 5) {
                     engine.healthRetryCount++;
@@ -270,7 +270,9 @@ Item {
     }
 
     function createSession(callback) {
+        var gen = ++engine._sessionGen;
         engine.httpRequest("POST", "/session", {}, function(error, data) {
+            if (gen !== engine._sessionGen) return;
             if (!error && data && data.id) {
                 engine.sessionId = data.id;
                 if (callback) callback(true);
@@ -393,10 +395,13 @@ Item {
         fallbackPollerTimer.stop();
         engine.messageModel.clear();
 
-        if (engine.connectionStatus === 1)
+        if (engine.connectionStatus === 1) {
+            var gen = ++engine._sessionGen;
             engine.createSession(function(success) {
-                if (!success) engine.addMessage("assistant", "Warning: Could not create new session.");
+                if (!success && gen === engine._sessionGen)
+                    engine.addMessage("assistant", "Warning: Could not create new session.");
             });
+        }
     }
 
     function setActive(isActive) {
@@ -538,6 +543,7 @@ Item {
                     if (!hasText) {
                         foundNew = true;
                         engine.stallCount = 0;
+                        if (msgId) engine.seenMessageIds[msgId] = true;
                     }
                 }
 
