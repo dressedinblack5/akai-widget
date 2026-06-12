@@ -26,8 +26,8 @@ Rectangle {
         anchors.leftMargin: 4
         anchors.rightMargin: 4
         width: Math.min(contentText.implicitWidth + 24, parent.width * 0.88)
-        height: Math.min(contentText.implicitHeight + 16, 360)
-        radius: 8
+        height: Math.min(contentText.implicitHeight + 14, 360)
+        radius: 6
         color: role === "user" ? root.bubbleUserBg : root.bubbleAsstBg
         border.width: 1
         border.color: role === "user" ? root.bubbleUserBorder : root.bubbleAsstBorder

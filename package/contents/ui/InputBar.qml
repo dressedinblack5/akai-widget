@@ -59,9 +59,9 @@ RowLayout {
 
         background: Rectangle {
             color: root.ibBg
-            radius: 6
+            radius: 4
             border.width: 1
-            border.color: inputField.activeFocus ? root.ibFocusBorder : root.ibBorder
+            border.color: inputField.activeFocus ? root.ibFocusBorder : "transparent"
         }
     }
 
@@ -76,7 +76,7 @@ RowLayout {
 
         background: Rectangle {
             color: connectBtn.hovered ? root.ibGreen : Qt.darker(root.ibGreen, 1.1)
-            radius: 6
+            radius: 4
         }
 
         contentItem: Label {
@@ -101,7 +101,7 @@ RowLayout {
 
         background: Rectangle {
             color: sendBtn.enabled ? (sendBtn.hovered ? root.ibFocusBorder : root.ibSendBg) : root.ibBg
-            radius: 6
+            radius: 4
         }
 
         contentItem: Label {
@@ -124,7 +124,7 @@ RowLayout {
 
         background: Rectangle {
             color: stopBtn.hovered ? Qt.darker(root.ibRed, 1.1) : root.ibRed
-            radius: 6
+            radius: 4
         }
 
         contentItem: Label {
@@ -146,7 +146,7 @@ RowLayout {
 
         background: Rectangle {
             color: newChatBtn.hovered ? Qt.darker(root.ibBg, 1.3) : Qt.darker(root.ibBg, 1.5)
-            radius: 6
+            radius: 4
         }
 
         contentItem: Label {

@@ -178,7 +178,8 @@ Item {
 
         if (type === "session.idle" || (type === "message.updated" && props.info && props.info.finish === "stop")) {
             var finalText = props.info && props.info.text ? props.info.text : engine.sseResponseText;
-            finalizeResponse(finalText, false);
+            var finalMsgId = (props.info && props.info.id) || "";
+            finalizeResponse(finalText, false, finalMsgId);
             return;
         }
 
@@ -194,8 +195,10 @@ Item {
         }
     }
 
-    function finalizeResponse(text, isError) {
+    function finalizeResponse(text, isError, msgId) {
         if (!engine.loading) return;
+
+        if (msgId) engine.seenMessageIds[msgId] = true;
 
         engine.loading = false;
         responseTimeoutTimer.stop();
@@ -229,6 +232,8 @@ Item {
                         engine.cachedProviderData = data2;
                         engine.availableModels = Utils.buildModelListFromConfig(data2, engine.recentModelValues);
                         engine.selectDefaultModel();
+                    } else {
+                        engine.addMessage("assistant", "Error: Could not load providers. The server may be misconfigured.");
                     }
                 });
             }
@@ -305,7 +310,6 @@ Item {
         engine.streaming = false;
         engine.streamIndex = -1;
         engine.sseResponseText = "";
-        engine.seenMessageIds = {};
         engine.stallCount = 0;
         engine._lastSseActivity = Date.now();
 

@@ -24,9 +24,9 @@ ScrollView {
         id: listView
 
         anchors.fill: parent
-        anchors.margins: 4
+        anchors.margins: 2
         model: root.messages
-        spacing: 4
+        spacing: 2
         property bool _userScrolledUp: false
 
         onContentYChanged: {

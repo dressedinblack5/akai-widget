@@ -45,11 +45,6 @@ RowLayout {
         }
     }
 
-    Label {
-        text: "Model:"
-        color: sysPal.windowText
-    }
-
     ComboBox {
         id: modelCombo
 

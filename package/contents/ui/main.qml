@@ -10,8 +10,6 @@ import "utils.js" as Utils
 PlasmoidItem {
     id: root
 
-    property bool _flashConnected: false
-
     SystemPalette { id: sysPal; colorGroup: SystemPalette.Active }
 
     preferredRepresentation: Plasmoid.formFactor === PlasmaCore.Types.Planar ? fullRepresentation : compactRepresentation
@@ -119,13 +117,12 @@ PlasmoidItem {
 
         ColumnLayout {
             anchors.fill: parent
-            spacing: 4
+            spacing: 2
 
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 36
+                Layout.preferredHeight: 32
                 color: popupOuter.themeBg
-                radius: 6
 
                 RowLayout {
                     x: 4
@@ -174,6 +171,7 @@ PlasmoidItem {
 
                         Component.onCompleted: {
                             engine.modelSelectorRef = modelSelector;
+                            Qt.callLater(function() { engine.selectDefaultModel(); });
                         }
 
                         onModelSelected: function(modelId) {
@@ -192,37 +190,33 @@ PlasmoidItem {
                         }
                     }
 
-                    Item {
-                        Layout.preferredWidth: clearBtn.visible ? 60 : 0
-                        Layout.preferredHeight: 24
+                    Rectangle {
+                        id: clearBtn
+                        implicitWidth: 24
+                        implicitHeight: 24
+                        radius: 4
+                        visible: messageModel.count > 0
+                        color: clearMouse.containsMouse ? Qt.darker(popupOuter.themeRed, 1.1) : "transparent"
 
-                        Rectangle {
-                            id: clearBtn
+                        Label {
+                            anchors.centerIn: parent
+                            text: "\u2715"
+                            color: clearMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText
+                            font.pixelSize: 12
+                        }
+
+                        MouseArea {
+                            id: clearMouse
                             anchors.fill: parent
-                            radius: 4
-                            visible: messageModel.count > 0
-                            color: clearMouse.containsMouse ? popupOuter.themeRed : Qt.darker(popupOuter.themeBg, 1.3)
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: engine.resetChat()
+                        }
 
-                            Label {
-                                anchors.centerIn: parent
-                                text: "Clear"
-                                color: popupOuter.themeText
-                                font.pixelSize: 11
-                            }
-
-                            MouseArea {
-                                id: clearMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: engine.resetChat()
-                            }
-
-                            ToolTip {
-                                visible: clearMouse.containsMouse
-                                text: "Clear chat history"
-                                delay: 500
-                            }
+                        ToolTip {
+                            visible: clearMouse.containsMouse
+                            text: "Clear chat history"
+                            delay: 500
                         }
                     }
                 }
@@ -244,7 +238,7 @@ PlasmoidItem {
 
                 ColumnLayout {
                     anchors.centerIn: parent
-                    spacing: 12
+                    spacing: 8
 
                     Label {
                         Layout.alignment: Qt.AlignHCenter
@@ -261,7 +255,7 @@ PlasmoidItem {
 
                         background: Rectangle {
                             color: parent.hovered ? popupOuter.themeGreen : Qt.darker(popupOuter.themeGreen, 1.1)
-                            radius: 6
+                            radius: 4
                         }
 
                         contentItem: Label {
@@ -273,106 +267,73 @@ PlasmoidItem {
                             verticalAlignment: Text.AlignVCenter
                         }
                     }
-                }
-            }
 
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 18
-                visible: engine.connectionStatus !== 1 || _flashConnected
-
-                RowLayout {
-                    anchors.fill: parent
-                    spacing: 4
-                    opacity: engine.connectionStatus !== 1 ? 1 : 0
-                    visible: opacity > 0
-
-                    Label {
-                        text: engine.connectionStatus === 0 ? "Connecting\u2026" : "Server offline"
-                        color: engine.connectionStatus === 2 ? popupOuter.themeRed : popupOuter.themeOrange
-                        font.pixelSize: 10
-                        horizontalAlignment: Text.AlignHCenter
-                        Layout.fillWidth: true
-                    }
-
-                    Rectangle {
-                        implicitWidth: 22
-                        implicitHeight: 22
-                        radius: 3
+                    Row {
+                        Layout.alignment: Qt.AlignHCenter
                         visible: engine.connectionStatus === 2
-                        color: startBtn.hovered ? popupOuter.themeGreen : Qt.darker(popupOuter.themeGreen, 1.1)
+                        spacing: 8
 
-                        Label {
-                            anchors.centerIn: parent
-                            text: processManager.serverRunning ? "\u21BB" : "\u25B6"
-                            color: "white"
-                            font.pixelSize: 12
-                        }
+                        Rectangle {
+                            width: 28
+                            height: 28
+                            radius: 4
+                            color: srvStartBtn.containsMouse ? popupOuter.themeGreen : Qt.darker(popupOuter.themeGreen, 1.1)
 
-                        MouseArea {
-                            id: startBtn
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (processManager.serverRunning)
-                                    processManager.restartServer();
-                                else
-                                    processManager.startServer();
+                            Label {
+                                anchors.centerIn: parent
+                                text: processManager.serverRunning ? "\u21BB" : "\u25B6"
+                                color: "white"
+                                font.pixelSize: 13
+                            }
+
+                            MouseArea {
+                                id: srvStartBtn
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (processManager.serverRunning)
+                                        processManager.restartServer();
+                                    else
+                                        processManager.startServer();
+                                }
+                            }
+
+                            ToolTip {
+                                visible: srvStartBtn.containsMouse
+                                text: processManager.serverRunning ? "Restart server" : "Start server"
+                                delay: 600
                             }
                         }
 
-                        ToolTip {
-                            visible: startBtn.containsMouse
-                            text: processManager.serverRunning ? "Restart server" : "Start server"
-                            delay: 600
+                        Rectangle {
+                            width: 28
+                            height: 28
+                            radius: 4
+                            visible: processManager.serverRunning
+                            color: srvStopBtn.containsMouse ? Qt.darker(popupOuter.themeRed, 1.1) : popupOuter.themeRed
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: "\u25A0"
+                                color: popupOuter.themeHighlightedText
+                                font.pixelSize: 13
+                            }
+
+                            MouseArea {
+                                id: srvStopBtn
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: processManager.stopServer()
+                            }
+
+                            ToolTip {
+                                visible: srvStopBtn.containsMouse
+                                text: "Stop server"
+                                delay: 600
+                            }
                         }
-                    }
-
-                    Rectangle {
-                        implicitWidth: 22
-                        implicitHeight: 22
-                        radius: 3
-                        visible: engine.connectionStatus === 2 && processManager.serverRunning
-                    color: stopSrvBtn.hovered ? Qt.darker(popupOuter.themeRed, 1.1) : popupOuter.themeRed
-
-                    Label {
-                        anchors.centerIn: parent
-                        text: "\u25A0"
-                        color: popupOuter.themeHighlightedText
-                            font.pixelSize: 12
-                        }
-
-                        MouseArea {
-                            id: stopSrvBtn
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: processManager.stopServer()
-                        }
-
-                        ToolTip {
-                            visible: stopSrvBtn.containsMouse
-                            text: "Stop server"
-                            delay: 600
-                        }
-                    }
-
-                    Behavior on opacity {
-                        NumberAnimation { duration: 250 }
-                    }
-                }
-
-                Label {
-                    anchors.centerIn: parent
-                    text: "Connected"
-                    color: popupOuter.themeGreen
-                    font.pixelSize: 10
-                    opacity: _flashConnected ? 0.9 : 0
-                    visible: opacity > 0
-
-                    Behavior on opacity {
-                        NumberAnimation { duration: 500 }
                     }
                 }
             }
@@ -395,14 +356,14 @@ PlasmoidItem {
             anchors.bottom: parent.bottom
             width: 16
             height: 16
-            color: "#40ffffff"
+            color: "#20ffffff"
 
             Canvas {
                 anchors.fill: parent
                 onPaint: {
                     var ctx = getContext("2d");
-                    ctx.strokeStyle = "#80ffffff";
-                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = "#40ffffff";
+                    ctx.lineWidth = 1;
                     ctx.beginPath();
                     ctx.moveTo(width - 6, height);
                     ctx.lineTo(width, height - 6);
@@ -435,20 +396,5 @@ PlasmoidItem {
             }
         }
     }
-    Connections {
-        target: engine
-        function onConnectionStatusChanged() {
-            if (engine.connectionStatus === 1) {
-                root._flashConnected = true;
-                connectedTimer.restart();
-            }
-        }
-    }
 
-    Timer {
-        id: connectedTimer
-        interval: 2500
-        repeat: false
-        onTriggered: root._flashConnected = false
-    }
 }
