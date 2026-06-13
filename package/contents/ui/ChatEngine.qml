@@ -22,7 +22,6 @@ Item {
     property int stallCount: 0
     property var seenMessageIds: ({})
     property var modelSelectorRef: null
-    property var usageTracker: null
     property string savedModel: ""
     property int _sessionGen: 0
     property int _pollCount: 0
@@ -196,9 +195,6 @@ Item {
         console.log("[ChatEngine] loading set to true");
         engine.stallCount = 0;
 
-        if (engine.usageTracker)
-            engine.usageTracker.beginRequest(engine.selectedProviderId, engine.selectedModelId);
-
         var curValue = engine.selectedProviderId + "/" + engine.selectedModelId;
         var idx = engine.recentModelValues.indexOf(curValue);
         if (idx >= 0) engine.recentModelValues.splice(idx, 1);
@@ -249,7 +245,6 @@ Item {
                 responseTimeoutTimer.stop();
                 fallbackPollerTimer.stop();
                 engine.stallCount = 0;
-                if (engine.usageTracker) engine.usageTracker.endRequest(false);
                 engine.addMessage("assistant", msg);
             }
         });
@@ -262,7 +257,6 @@ Item {
             engine.httpRequest("POST", "/session/" + engine.sessionId + "/cancel", {}, function() {});
         }
 
-        if (engine.usageTracker) engine.usageTracker.endRequest(false);
         engine.addMessage("assistant", "_[stopped]_");
         engine.loading = false;
         responseTimeoutTimer.stop();
@@ -303,7 +297,6 @@ Item {
             if (error || !data) {
                 if (isFinal) {
                     engine.loading = false;
-                    if (engine.usageTracker) engine.usageTracker.endRequest(false);
                     engine.addMessage("assistant", "No response from " + engine.selectedModelName + " (connection failed).");
                 }
                 return;
@@ -313,7 +306,6 @@ Item {
             if (!Array.isArray(msgs)) {
                 if (isFinal) {
                     engine.loading = false;
-                    if (engine.usageTracker) engine.usageTracker.endRequest(false);
                     engine.addMessage("assistant", "No response from " + engine.selectedModelName + ".");
                 }
                 return;
@@ -339,7 +331,6 @@ Item {
                         responseTimeoutTimer.stop();
                         fallbackPollerTimer.stop();
                         engine.stallCount = 0;
-                        if (engine.usageTracker) engine.usageTracker.endRequest(true);
                         return;
                     }
                 }
@@ -347,7 +338,6 @@ Item {
 
             if (isFinal) {
                 engine.loading = false;
-                if (engine.usageTracker) engine.usageTracker.endRequest(false);
                 engine.addMessage("assistant", "No response from " + engine.selectedModelName + ".");
             }
         });
@@ -382,7 +372,6 @@ Item {
                 engine.loading = false;
                 fallbackPollerTimer.stop();
                 engine.stallCount = 0;
-                if (engine.usageTracker) engine.usageTracker.endRequest(false);
                 engine.addMessage("assistant", "No response from " + engine.selectedModelName + " (timeout). Try a different model.");
             }
         }
