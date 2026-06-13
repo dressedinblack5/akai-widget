@@ -24,21 +24,29 @@ PlasmoidItem {
 
         serverUrl: "http://" + (plasmoid.configuration.serverHost || "localhost") + ":" + (plasmoid.configuration.serverPort || 4096)
         messageModel: messageModel
-        processManager: processManager
+        connectionManager: connectionManager
         usageTracker: usageTracker
         savedModel: plasmoid.configuration.lastModel || ""
 
         onMessageAdded: saveMessages()
     }
 
+    ConnectionManager {
+        id: connectionManager
+        serverUrl: engine.serverUrl
+        processManager: processManager
+
+        onServerReady: engine.fetchProviders()
+        onConnectionError: function(msg) { engine.addMessage("assistant", msg); }
+    }
+
     ProcessManager {
         id: processManager
 
-        onServerStarted: engine.checkHealth()
-        onServerStopped: Qt.callLater(engine.checkHealth)
+        onServerStarted: connectionManager.onServerStarted()
+        onServerStopped: connectionManager.onServerStopped()
         onServerError: function(error) {
-            engine.addMessage("assistant", "Server error: " + error);
-            Qt.callLater(engine.checkHealth);
+            connectionManager.onServerError(error);
         }
     }
 
@@ -86,7 +94,7 @@ PlasmoidItem {
 
     Component.onCompleted: {
         loadMessages();
-        engine.checkHealth();
+        connectionManager.start();
         if (plasmoid.configuration.popupWidth <= 0) {
             plasmoid.configuration.popupWidth = Math.round(Screen.width * 0.5);
             plasmoid.configuration.popupHeight = Math.round(Screen.height * 0.85);
@@ -103,7 +111,7 @@ PlasmoidItem {
 
         StatusIndicator {
             anchors.centerIn: parent
-            status: engine.connectionStatus
+            status: connectionManager.statusCode
         }
 
         MouseArea {
@@ -153,7 +161,7 @@ PlasmoidItem {
 
                         StatusIndicator {
                             id: statusDot
-                            status: engine.connectionStatus
+                            status: connectionManager.statusCode
                             disconnectedColor: Qt.rgba(popupOuter.themeText.r, popupOuter.themeText.g, popupOuter.themeText.b, 0.5)
                             connectedColor: popupOuter.themeGreen
                             errorColor: popupOuter.themeRed
@@ -161,16 +169,16 @@ PlasmoidItem {
 
                         TapHandler {
                             onTapped: {
-                                if (engine.connectionStatus === 2)
-                                    engine.checkHealth();
+                                if (!connectionManager.isReady && !connectionManager.isConnecting)
+                                    connectionManager.start();
                             }
                         }
 
                         ToolTip {
                             visible: statusHover.hovered
-                            text: engine.connectionStatus === 0 ? "Connecting..." :
-                                  engine.connectionStatus === 1 ? "Server online" :
-                                  "Health check failed — tap to retry"
+                            text: connectionManager.isConnecting ? "Connecting..." :
+                                  connectionManager.isReady ? "Server online" :
+                                  "Health check failed \u2014 tap to retry"
                             delay: 500
                         }
                     }
@@ -180,7 +188,7 @@ PlasmoidItem {
 
                         Layout.fillWidth: true
                         models: engine.availableModels
-                        enabled: engine.connectionStatus === 1
+                        enabled: connectionManager.isReady
 
                         Component.onCompleted: {
                             engine.modelSelectorRef = modelSelector;
@@ -270,7 +278,7 @@ PlasmoidItem {
 
                 ChatView {
                     anchors.fill: parent
-                    visible: !root.showUsage && engine.connectionStatus === 1
+                    visible: !root.showUsage && connectionManager.isReady
                     messages: messageModel
                     loading: engine.loading
                     loadingText: engine.selectedModelName ? "Thinking with " + engine.selectedModelName : "Thinking"
@@ -278,7 +286,7 @@ PlasmoidItem {
 
                 Item {
                     anchors.fill: parent
-                    visible: !root.showUsage && engine.connectionStatus !== 1
+                    visible: !root.showUsage && !connectionManager.isReady
 
                     ColumnLayout {
                         anchors.centerIn: parent
@@ -286,13 +294,13 @@ PlasmoidItem {
 
                         Label {
                             Layout.alignment: Qt.AlignHCenter
-                            text: engine.connectionStatus === 0 ? "Connecting\u2026" : "Server offline"
-                            color: engine.connectionStatus === 0 ? popupOuter.themeOrange : popupOuter.themeRed
+                            text: connectionManager.isConnecting ? "Connecting\u2026" : "Server offline"
+                            color: connectionManager.isConnecting ? popupOuter.themeOrange : popupOuter.themeRed
                             font.pixelSize: 14
-                            opacity: engine.connectionStatus === 0 ? 0.4 : 1.0
+                            opacity: connectionManager.isConnecting ? 0.4 : 1.0
 
                             SequentialAnimation on opacity {
-                                running: engine.connectionStatus === 0
+                                running: connectionManager.isConnecting
                                 loops: Animation.Infinite
                                 PropertyAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
                                 PropertyAnimation { to: 0.4; duration: 800; easing.type: Easing.InOutQuad }
@@ -305,11 +313,11 @@ PlasmoidItem {
                             width: 12
                             height: 12
                             radius: 6
-                            visible: engine.connectionStatus === 0
+                            visible: connectionManager.isConnecting
                             color: popupOuter.themeOrange
 
                             SequentialAnimation on opacity {
-                                running: engine.connectionStatus === 0
+                                running: connectionManager.isConnecting
                                 loops: Animation.Infinite
                                 PropertyAnimation { to: 0.3; duration: 800; easing.type: Easing.InOutQuad }
                                 PropertyAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
@@ -318,7 +326,7 @@ PlasmoidItem {
 
                         Row {
                             Layout.alignment: Qt.AlignHCenter
-                            visible: engine.connectionStatus === 0 || engine.connectionStatus === 2
+                            visible: !connectionManager.isReady
                             spacing: 8
 
                             Rectangle {
@@ -329,7 +337,7 @@ PlasmoidItem {
 
                                 Label {
                                     anchors.centerIn: parent
-                                    text: processManager.serverRunning ? "\u21BB" : "\u25B6"
+                                    text: connectionManager.serverRunning ? "\u21BB" : "\u25B6"
                                     color: "white"
                                     font.pixelSize: 13
                                 }
@@ -340,16 +348,16 @@ PlasmoidItem {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        if (processManager.serverRunning)
-                                            processManager.restartServer();
+                                        if (connectionManager.serverRunning)
+                                            connectionManager.restart();
                                         else
-                                            processManager.startServer();
+                                            connectionManager.start();
                                     }
                                 }
 
                                 ToolTip {
                                     visible: srvStartBtn.containsMouse
-                                    text: processManager.serverRunning ? "Restart server" : "Start server"
+                                    text: connectionManager.serverRunning ? "Restart server" : "Start server"
                                     delay: 500
                                 }
                             }
@@ -358,7 +366,7 @@ PlasmoidItem {
                                 width: 28
                                 height: 28
                                 radius: 4
-                                visible: processManager.serverRunning
+                                visible: connectionManager.serverRunning
                                 color: srvStopBtn.containsMouse ? Qt.darker(popupOuter.themeRed, 1.1) : popupOuter.themeRed
 
                                 Label {
@@ -373,7 +381,7 @@ PlasmoidItem {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: processManager.stopServer()
+                                    onClicked: connectionManager.stop()
                                 }
 
                                 ToolTip {
@@ -402,7 +410,7 @@ PlasmoidItem {
             InputBar {
                 Layout.fillWidth: true
                 visible: !root.showUsage
-                enabled: engine.connectionStatus === 1
+                enabled: connectionManager.isReady
                 loading: engine.loading
 
                 onSend: function(text) { engine.sendMessage(text); }

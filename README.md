@@ -3,15 +3,16 @@
 A compact AI chat widget for the KDE Plasma 6 desktop, powered by [Opencode](https://github.com/sst/opencode).
 
 - Multi-turn conversations with history injection across sessions
-- Pin-to-top (window stays above others, persisted across sessions)
-- Auto-starts the Opencode server on widget load with retry
-- Multiple AI model providers (Opencode, Ollama, Google, GitHub Copilot, Horde)
+- Works with any OpenCode-compatible provider (Opencode, Ollama, Google, GitHub Copilot, Horde)
 - Smart model selection — prefers providers with API keys configured, falls back to known working models
 - Model guard — prevents sending with no model selected, showing a clear error instead of a stuck spinner
-- Fast-fail poller — detects silent model failures and recovers in 15s (down from 60s)
+- Fast-fail poller — detects silent model failures and recovers in ~15s instead of hanging
+- Dedicated `ConnectionManager` component with a state machine (Disconnected → Starting → Connecting → Connected → Error) and visual feedback for each state
+- Automatic SSE reconnection with exponential backoff
+- Pin-to-top (window stays above others, persisted across sessions)
 - Smart scroll-to-bottom on new messages
 - Persistent chat history and model selection
-- Manage the Opencode server process from the widget panel
+- Start, restart, and stop the OpenCode server from the widget panel
 - Resizable popup with configurable dimensions
 - Keyboard shortcuts (Ctrl+N for new chat)
 

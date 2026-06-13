@@ -7,7 +7,6 @@ Item {
     visible: false
 
     property string serverUrl: "http://localhost:4096"
-    property int connectionStatus: 0
     property bool loading: false
     property string sessionId: ""
     property var availableModels: []
@@ -17,17 +16,10 @@ Item {
     property var cachedProviderData: null
     property var recentModelValues: []
     property var messageModel: null
-    property var processManager: null
+    property var connectionManager: null
     property bool active: true
 
-    property var sseXhr: null
-    property string sseBuffer: ""
-    property string sseLineRemainder: ""
     property int stallCount: 0
-    property int sseFailCount: 0
-    property bool _sseErrorShown: false
-    property real _lastSseActivity: 0
-    property int healthRetryCount: 0
     property var seenMessageIds: ({})
     property var modelSelectorRef: null
     property var usageTracker: null
@@ -56,102 +48,6 @@ Item {
         xhr.ontimeout = function() { callback(true, null, 0); };
         xhr.onerror = function() { callback(true, null, 0); };
         xhr.send(body ? JSON.stringify(body) : null);
-    }
-
-    function checkHealth() {
-        engine.connectionStatus = 0;
-        if (engine.processManager && !engine.processManager.serverRunning)
-            engine.processManager.startServer();
-        engine.httpRequest("GET", "/global/health", null, function(error, data, status) {
-            if (!error && data && (data.healthy || data.status === "ok")) {
-                engine.connectionStatus = 1;
-                engine.sseFailCount = 0;
-                engine._sseErrorShown = false;
-                engine.healthRetryCount = 0;
-                engine.connectSSE();
-                engine.fetchProviders();
-            } else {
-                engine.healthRetryCount++;
-                if (engine.healthRetryCount < 30)
-                    healthRetryTimer.start();
-                else
-                    engine.connectionStatus = 2;
-            }
-        }, 3000);
-    }
-
-    function connectSSE() {
-        console.log("[ChatEngine] connectSSE called, aborting existing connection:", !!engine.sseXhr);
-        if (engine.sseXhr) {
-            engine.sseXhr.abort();
-            engine.sseXhr = null;
-        }
-        var xhr = new XMLHttpRequest();
-        engine.sseXhr = xhr;
-        engine.sseBuffer = "";
-        engine.sseLineRemainder = "";
-        engine._lastSseActivity = Date.now();
-        console.log("[ChatEngine] SSE buffer reset, opening connection to:", engine.serverUrl + "/global/event");
-        xhr.open("GET", engine.serverUrl + "/global/event", true);
-        xhr.timeout = 0;
-        xhr.onerror = function() {
-            if (!engine || engine.sseXhr !== xhr) return;
-            console.log("[ChatEngine] SSE error");
-            engine.sseXhr = null;
-            engine.sseFailCount++;
-            if (engine.sseFailCount >= 5 && !engine._sseErrorShown && engine.active) {
-                engine._sseErrorShown = true;
-                engine.addMessage("assistant", "Live updates disconnected. Responses will use fallback polling.");
-            }
-            sseReconnectTimer.start();
-        };
-        xhr.onload = function() {
-            if (!engine || engine.sseXhr !== xhr) return;
-            console.log("[ChatEngine] SSE connection ended");
-            engine.sseXhr = null;
-            sseReconnectTimer.start();
-        };
-        xhr.send(null);
-    }
-
-    function handleSSEEvent(event) {
-        if (!event) return;
-
-        var type = event.type;
-        var props = event.payload || {};
-
-        if (!type && props && props.type) {
-            type = props.type;
-            props = props.properties || {};
-        }
-        if (!type) return;
-
-        console.log("[ChatEngine] SSE event:", type);
-
-        if (type === "session.error") {
-            if (engine.loading) {
-                engine.loading = false;
-                responseTimeoutTimer.stop();
-                fallbackPollerTimer.stop();
-                engine.stallCount = 0;
-            }
-            var sessErr = props.error || {};
-            var errMsg = (sessErr.data && sessErr.data.message) || sessErr.name || "Session error";
-            engine.addMessage("assistant", "Error: " + errMsg);
-            return;
-        }
-
-        if (type === "session.idle" || (type === "session.status" && props.status && props.status.type === "idle")) {
-            if (props.sessionID && props.sessionID !== engine.sessionId) return;
-            console.log("[ChatEngine] session idle (type:", type, "), loading:", engine.loading);
-            if (engine.loading) {
-                fallbackPollerTimer.stop();
-                responseTimeoutTimer.stop();
-                engine.stallCount = 0;
-                engine.pollForResponse(true);
-            }
-            return;
-        }
     }
 
     function addMessage(role, text) {
@@ -257,8 +153,6 @@ Item {
             }
         }
 
-        engine.loading = true;
-
         function doSend() {
             engine.createSession(function(success) {
                 if (success) engine.doSendMessage(text);
@@ -269,22 +163,15 @@ Item {
             });
         }
 
-        if (engine.processManager && !engine.processManager.serverRunning) {
-            engine.processManager.startServer();
-            engine.httpRequest("GET", "/global/health", null, function(error, data) {
-                if (!error && data && (data.healthy || data.status === "ok")) {
-                    engine.connectionStatus = 1;
-                    engine.connectSSE();
-                    engine.fetchProviders();
-                    doSend();
-                } else {
-                    engine.loading = false;
-                    engine.addMessage("assistant", "Starting server... Retry in a moment.");
-                }
-            }, 5000);
-        } else {
-            doSend();
+        if (engine.connectionManager && !engine.connectionManager.isReady) {
+            engine.connectionManager.start();
+            engine.loading = false;
+            engine.addMessage("assistant", "Server not ready \u2014 connection being established. Try again in a moment.");
+            return;
         }
+
+        engine.loading = true;
+        doSend();
     }
 
     function buildHistory() {
@@ -308,7 +195,6 @@ Item {
         engine._pollCount = 0;
         console.log("[ChatEngine] loading set to true");
         engine.stallCount = 0;
-        engine._lastSseActivity = Date.now();
 
         if (engine.usageTracker)
             engine.usageTracker.beginRequest(engine.selectedProviderId, engine.selectedModelId);
@@ -326,7 +212,7 @@ Item {
         var r2 = Math.random().toString(36).substring(2, 22);
         var r3 = Math.random().toString(36).substring(2, 22);
         var parts = [
-            {"id": "prt_" + now + "000" + r0, "type": "text", "text": "Be concise. Answer in 1-2 sentences. Do not repeat the question. Do not show your thought process."}
+            {"id": "prt_" + now + "000" + r0, "type": "text", "text": "Answer naturally and thoroughly. Do not repeat the question. Do not show your thought process."}
         ];
         if (history.length > 0) {
             parts.push({"id": "prt_" + now + "001" + r3, "type": "text", "text": "Previous conversation:\n" + history + "\n\nCurrent message:"});
@@ -335,10 +221,9 @@ Item {
         var body = {
             "model": {"modelID": engine.selectedModelId, "providerID": engine.selectedProviderId},
             "messageID": "msg_" + now + "001" + r1,
-            "system": "You are a helpful, concise chatbot. Do NOT use any tools. Answer conversationally with text only.",
+            "system": "You are a helpful and knowledgeable chatbot. Do NOT use any tools. Answer conversationally with text only.",
             "parts": parts
         };
-        if (sseHeartbeatTimer.running) sseHeartbeatTimer.restart();
         responseTimeoutTimer.start();
         fallbackPollerTimer.start();
 
@@ -377,12 +262,6 @@ Item {
             engine.httpRequest("POST", "/session/" + engine.sessionId + "/cancel", {}, function() {});
         }
 
-        if (engine.sseXhr) {
-            engine.sseXhr.abort();
-            engine.sseXhr = null;
-            engine.sseBuffer = "";
-        }
-
         if (engine.usageTracker) engine.usageTracker.endRequest(false);
         engine.addMessage("assistant", "_[stopped]_");
         engine.loading = false;
@@ -401,7 +280,7 @@ Item {
         fallbackPollerTimer.stop();
         engine.messageModel.clear();
 
-        if (engine.connectionStatus === 1) {
+        if (engine.connectionManager && engine.connectionManager.isReady) {
             var gen = ++engine._sessionGen;
             engine.createSession(function(success) {
                 if (!success && gen === engine._sessionGen)
@@ -412,126 +291,8 @@ Item {
 
     function setActive(isActive) {
         engine.active = isActive === true;
-        if (isActive) {
-            sseReaderTimer.running = true;
-            if (!engine.sseXhr) {
-                if (engine.connectionStatus === 1)
-                    engine.connectSSE();
-                else {
-                    if (engine.processManager && !engine.processManager.serverRunning)
-                        engine.processManager.startServer();
-                    engine.checkHealth();
-                }
-            }
-        } else {
-            if (!engine.loading) {
-                sseReaderTimer.running = false;
-                if (engine.sseXhr) {
-                    engine.sseXhr.abort();
-                    engine.sseXhr = null;
-                    engine.sseBuffer = "";
-                }
-            }
-        }
-    }
-
-    Timer {
-        id: sseReconnectTimer
-        interval: Math.min(2000 * Math.pow(2, Math.min(engine.sseFailCount, 5)), 60000)
-        repeat: false
-        onTriggered: {
-            if (!engine.active) return;
-            if (engine.sseFailCount >= 5) {
-                engine.connectionStatus = 0;
-                engine.checkHealth();
-            } else {
-                engine.connectSSE();
-            }
-        }
-    }
-
-    Timer {
-        id: healthRetryTimer
-        interval: 2000
-        repeat: false
-        onTriggered: engine.checkHealth()
-    }
-
-    Timer {
-        id: sseHeartbeatTimer
-        interval: 15000
-        repeat: true
-        running: engine.connectionStatus === 1
-        onTriggered: {
-            if (!engine.sseXhr && engine.connectionStatus === 1) {
-                console.log("[ChatEngine] SSE heartbeat: no connection, starting reconnect");
-                sseReconnectTimer.start();
-            }
-        }
-    }
-
-    Timer {
-        id: sseReaderTimer
-        interval: 200
-        repeat: true
-        running: true
-        onTriggered: {
-            var xhr = engine.sseXhr;
-            if (!xhr) {
-                console.log("[ChatEngine] SSE reader: no xhr, skipping");
-                return;
-            }
-            if (xhr.readyState !== 3 && xhr.readyState !== 4) {
-                console.log("[ChatEngine] SSE reader: wrong readyState:", xhr.readyState);
-                return;
-            }
-
-            var full = xhr.responseText;
-            if (full.length === engine.sseBuffer.length) return;
-
-            var newData = full.substring(engine.sseBuffer.length);
-            engine.sseBuffer = full;
-
-            console.log("[ChatEngine] SSE reader: newData length:", newData.length, "buffer length:", engine.sseBuffer.length);
-
-            if (newData.length > 0) {
-                engine.sseFailCount = 0;
-                engine._sseErrorShown = false;
-                engine._lastSseActivity = Date.now();
-                if (sseHeartbeatTimer.running) sseHeartbeatTimer.restart();
-            }
-
-            var raw = engine.sseLineRemainder + newData;
-            engine.sseLineRemainder = "";
-            var lines = raw.split(/\r?\n/);
-
-            if (raw.length > 0 && raw[raw.length - 1] !== "\n") {
-                engine.sseLineRemainder = lines.pop();
-            } else {
-                lines.pop();
-            }
-
-            console.log("[ChatEngine] SSE reader: processing", lines.length, "lines");
-
-            for (var i = 0; i < lines.length; i++) {
-                if (lines[i].indexOf("data: ") === 0) {
-                    try {
-                        var eventData = JSON.parse(lines[i].substring(6));
-                        console.log("[ChatEngine] SSE reader: parsed event, type:", eventData.type);
-                        engine.handleSSEEvent(eventData);
-                    } catch (e) {
-                        console.log("[ChatEngine] SSE reader: JSON parse error:", e.message, "line:", lines[i].substring(0, 100));
-                    }
-                }
-            }
-
-            if (xhr.readyState === 4) {
-                if (engine.sseXhr !== xhr) return;
-                console.log("[ChatEngine] SSE reader: connection closed");
-                engine.sseXhr = null;
-                sseReconnectTimer.start();
-            }
-        }
+        if (engine.connectionManager)
+            engine.connectionManager.setActive(isActive);
     }
 
     function pollForResponse(isFinal) {
