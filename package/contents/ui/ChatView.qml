@@ -95,4 +95,41 @@ ScrollView {
             }
         }
     }
+
+    Rectangle {
+        id: scrollDownBtn
+        width: 28
+        height: 28
+        radius: 14
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 8
+        visible: listView._userScrolledUp
+        color: scrollHover.containsMouse ? Qt.darker(sysPal.highlight, 1.1) : sysPal.highlight
+        opacity: 0.9
+
+        Label {
+            anchors.centerIn: parent
+            text: "\u25BC"
+            color: sysPal.highlightedText
+            font.pixelSize: 12
+        }
+
+        MouseArea {
+            id: scrollHover
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                listView._userScrolledUp = false;
+                listView.positionViewAtEnd();
+            }
+        }
+
+        ToolTip {
+            visible: scrollHover.containsMouse
+            text: "Scroll to bottom"
+            delay: 300
+        }
+    }
 }
