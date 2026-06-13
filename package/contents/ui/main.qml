@@ -498,6 +498,7 @@ PlasmoidItem {
             InputBar {
                 id: inputBar
                 Layout.fillWidth: true
+                Layout.rightMargin: 16
                 visible: !root.showUsage
                 enabled: connectionManager.isReady
                 loading: engine.loading
