@@ -117,7 +117,7 @@ PlasmoidItem {
         loadMessages();
         connectionManager.start();
         if (plasmoid.configuration.popupWidth <= 0) {
-            plasmoid.configuration.popupWidth = Math.round(Screen.width * 0.5);
+            plasmoid.configuration.popupWidth = Math.round(Screen.width * 0.25);
             plasmoid.configuration.popupHeight = Math.round(Screen.height * 0.85);
         }
     }
@@ -144,7 +144,7 @@ PlasmoidItem {
     fullRepresentation: Item {
         id: popupOuter
 
-        Layout.preferredWidth: plasmoid.configuration.popupWidth > 0 ? plasmoid.configuration.popupWidth : Math.round(Screen.width * 0.5)
+        Layout.preferredWidth: plasmoid.configuration.popupWidth > 0 ? plasmoid.configuration.popupWidth : Math.round(Screen.width * 0.25)
         Layout.preferredHeight: plasmoid.configuration.popupHeight > 0 ? plasmoid.configuration.popupHeight : Math.round(Screen.height * 0.85)
         Layout.minimumWidth: 300
         Layout.minimumHeight: 400
