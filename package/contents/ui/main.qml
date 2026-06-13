@@ -209,7 +209,6 @@ PlasmoidItem {
 
                         Layout.fillWidth: true
                         models: engine.availableModels
-                        missingProviders: engine.missingProviders
                         enabled: connectionManager.isReady
 
                         Component.onCompleted: {
@@ -288,6 +287,35 @@ PlasmoidItem {
                         ToolTip {
                             visible: usageMouse.containsMouse
                             text: root.showUsage ? "Back to chat" : "Usage statistics"
+                            delay: 500
+                        }
+                    }
+
+                    Rectangle {
+                        id: pasteBtn
+                        implicitWidth: 24
+                        implicitHeight: 24
+                        radius: 4
+                        color: pasteMouse.containsMouse ? Qt.darker(popupOuter.themeHighlight, 1.1) : "transparent"
+
+                        Label {
+                            anchors.centerIn: parent
+                            text: "\u2398"
+                            color: pasteMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText
+                            font.pixelSize: 14
+                        }
+
+                        MouseArea {
+                            id: pasteMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: inputBar.pasteFromClipboard()
+                        }
+
+                        ToolTip {
+                            visible: pasteMouse.containsMouse
+                            text: "Paste to input"
                             delay: 500
                         }
                     }
@@ -468,6 +496,7 @@ PlasmoidItem {
             }
 
             InputBar {
+                id: inputBar
                 Layout.fillWidth: true
                 visible: !root.showUsage
                 enabled: connectionManager.isReady

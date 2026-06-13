@@ -22,6 +22,10 @@ RowLayout {
     signal newChat()
     signal stopRequested()
 
+    function pasteFromClipboard() {
+        inputField.paste();
+    }
+
     spacing: 4
     Layout.fillWidth: true
 
@@ -104,35 +108,6 @@ RowLayout {
             text: stopBtn.text
             color: root.ibBtnText
             font.pixelSize: 12
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
-    }
-
-    Button {
-        id: pasteBtn
-
-        implicitWidth: 34
-        implicitHeight: 34
-        visible: root.enabled
-        text: "\u2398"
-        onClicked: inputField.paste()
-
-        ToolTip {
-            visible: pasteBtn.hovered
-            text: "Paste from clipboard"
-            delay: 300
-        }
-
-        background: Rectangle {
-            color: pasteBtn.hovered ? Qt.lighter(root.ibBg, 1.05) : Qt.darker(root.ibBg, 1.5)
-            radius: 4
-        }
-
-        contentItem: Label {
-            text: pasteBtn.text
-            color: Qt.darker(root.ibText, 1.3)
-            font.pixelSize: 16
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }

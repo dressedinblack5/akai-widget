@@ -18,7 +18,6 @@ Item {
     property var messageModel: null
     property var connectionManager: null
     property bool active: true
-    property var missingProviders: []
 
     property int stallCount: 0
     property var seenMessageIds: ({})
@@ -64,14 +63,12 @@ Item {
             if (!error && data) {
                 engine.cachedProviderData = data;
                 engine.availableModels = Utils.buildModelList(data, engine.recentModelValues);
-                engine.missingProviders = Utils.findMissingProviders(data);
                 engine.selectDefaultModel();
             } else {
                 engine.httpRequest("GET", "/config", null, function(err2, data2) {
                     if (!err2 && data2) {
                         engine.cachedProviderData = data2;
                         engine.availableModels = Utils.buildModelListFromConfig(data2, engine.recentModelValues);
-                        engine.missingProviders = Utils.findMissingProviders(data2);
                         engine.selectDefaultModel();
                     } else {
                         engine.addMessage("assistant", "Error: Could not load providers. The server may be misconfigured.");
