@@ -393,8 +393,11 @@ Item {
             if (!engine.sseXhr) {
                 if (engine.connectionStatus === 1)
                     engine.connectSSE();
-                else
+                else {
+                    if (engine.processManager && !engine.processManager.serverRunning)
+                        engine.processManager.startServer();
                     engine.checkHealth();
+                }
             }
         } else {
             if (!engine.loading) {

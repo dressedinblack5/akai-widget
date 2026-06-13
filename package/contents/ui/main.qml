@@ -286,35 +286,39 @@ PlasmoidItem {
 
                         Label {
                             Layout.alignment: Qt.AlignHCenter
-                            text: engine.connectionStatus === 0 ? "Connecting..." : "Server offline"
+                            text: engine.connectionStatus === 0 ? "Connecting\u2026" : "Server offline"
                             color: engine.connectionStatus === 0 ? popupOuter.themeOrange : popupOuter.themeRed
                             font.pixelSize: 14
+                            opacity: engine.connectionStatus === 0 ? 0.4 : 1.0
+
+                            SequentialAnimation on opacity {
+                                running: engine.connectionStatus === 0
+                                loops: Animation.Infinite
+                                PropertyAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
+                                PropertyAnimation { to: 0.4; duration: 800; easing.type: Easing.InOutQuad }
+                            }
                         }
 
-                        Button {
+                        Rectangle {
+                            id: statusPulse
                             Layout.alignment: Qt.AlignHCenter
-                            visible: engine.connectionStatus === 2
-                            text: "Connect"
-                            onClicked: engine.checkHealth()
+                            width: 12
+                            height: 12
+                            radius: 6
+                            visible: engine.connectionStatus === 0
+                            color: popupOuter.themeOrange
 
-                            background: Rectangle {
-                                color: parent.hovered ? popupOuter.themeGreen : Qt.darker(popupOuter.themeGreen, 1.1)
-                                radius: 4
-                            }
-
-                            contentItem: Label {
-                                text: parent.text
-                                color: popupOuter.themeHighlightedText
-                                font.pixelSize: 14
-                                font.bold: true
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
+                            SequentialAnimation on opacity {
+                                running: engine.connectionStatus === 0
+                                loops: Animation.Infinite
+                                PropertyAnimation { to: 0.3; duration: 800; easing.type: Easing.InOutQuad }
+                                PropertyAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
                             }
                         }
 
                         Row {
                             Layout.alignment: Qt.AlignHCenter
-                            visible: engine.connectionStatus === 2
+                            visible: engine.connectionStatus === 0 || engine.connectionStatus === 2
                             spacing: 8
 
                             Rectangle {
@@ -400,12 +404,10 @@ PlasmoidItem {
                 visible: !root.showUsage
                 enabled: engine.connectionStatus === 1
                 loading: engine.loading
-                connectionStatus: engine.connectionStatus
 
                 onSend: function(text) { engine.sendMessage(text); }
                 onNewChat: engine.resetChat()
                 onStopRequested: engine.stopGeneration()
-                onConnectRequested: engine.checkHealth()
             }
         }
 

@@ -6,7 +6,6 @@ RowLayout {
     id: root
 
     property bool loading: false
-    property int connectionStatus: 1
 
     SystemPalette { id: sysPal; colorGroup: SystemPalette.Active }
 
@@ -14,7 +13,6 @@ RowLayout {
     readonly property color ibBg: Qt.lighter(sysPal.window, 1.05)
     readonly property color ibFocusBorder: sysPal.highlight
     readonly property color ibBorder: Qt.rgba(sysPal.windowText.r, sysPal.windowText.g, sysPal.windowText.b, 0.12)
-    readonly property color ibGreen: "#4CAF50"
     readonly property color ibRed: "#F44336"
     readonly property color ibDisabledText: Qt.darker(sysPal.windowText, 2)
     readonly property color ibBtnText: sysPal.highlightedText
@@ -23,7 +21,6 @@ RowLayout {
     signal send(string text)
     signal newChat()
     signal stopRequested()
-    signal connectRequested()
 
     spacing: 4
     Layout.fillWidth: true
@@ -43,9 +40,8 @@ RowLayout {
         Layout.fillWidth: true
         Layout.minimumHeight: 34
         Layout.maximumHeight: 100
-        visible: root.enabled
         enabled: root.enabled
-        placeholderText: root.loading ? "Model is thinking..." : "Type a message..."
+        placeholderText: root.loading ? "Model is thinking..." : (!root.enabled ? "Server offline \u2014 open to connect" : "Type a message...")
         color: root.ibText
         placeholderTextColor: Qt.darker(sysPal.windowText, 1.8)
         font.pixelSize: 13
@@ -63,30 +59,6 @@ RowLayout {
             radius: 4
             border.width: 1
             border.color: inputField.activeFocus ? root.ibFocusBorder : "transparent"
-        }
-    }
-
-    Button {
-        id: connectBtn
-
-        Layout.fillWidth: true
-        Layout.minimumHeight: 34
-        visible: !root.enabled
-        text: "Connect"
-        onClicked: root.connectRequested()
-
-        background: Rectangle {
-            color: connectBtn.hovered ? root.ibGreen : Qt.darker(root.ibGreen, 1.1)
-            radius: 4
-        }
-
-        contentItem: Label {
-            text: connectBtn.text
-            color: root.ibBtnText
-            font.pixelSize: 14
-            font.bold: true
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
         }
     }
 
