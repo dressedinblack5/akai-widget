@@ -40,7 +40,7 @@ Item {
                 var data = null;
                 var error = xhr.status !== 200 && xhr.status !== 201 && xhr.status !== 204;
                 if (xhr.responseText) {
-                    try { data = JSON.parse(xhr.responseText); } catch (e) {}
+                    try { data = JSON.parse(xhr.responseText); } catch (e) { console.warn("[ChatEngine] Failed to parse response:", e); }
                 }
                 callback(error, data, xhr.status);
             }

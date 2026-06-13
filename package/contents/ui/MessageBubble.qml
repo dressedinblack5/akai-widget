@@ -66,6 +66,53 @@ Rectangle {
                 background: null
             }
         }
+
+        Rectangle {
+            id: copyBtn
+            width: 20
+            height: 20
+            radius: 3
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: 4
+            visible: copyHover.hovered || _copied
+            color: _copied ? "#4CAF50" : (copyMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.2) : Qt.rgba(1, 1, 1, 0.1))
+
+            Label {
+                anchors.centerIn: parent
+                text: _copied ? "\u2713" : "\u2398"
+                color: "white"
+                font.pixelSize: 11
+            }
+
+            MouseArea {
+                id: copyMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    Qt.callLater(function() {
+                        Qt.copyToClipboard(root.text);
+                    });
+                    _copied = true;
+                    _copyTimer.start();
+                }
+            }
+
+            Timer {
+                id: _copyTimer
+                interval: 1500
+                repeat: false
+                onTriggered: _copied = false
+            }
+
+            property bool _copied: false
+        }
+
+        HoverHandler {
+            id: copyHover
+            cursorShape: Qt.ArrowCursor
+        }
     }
 
     Label {

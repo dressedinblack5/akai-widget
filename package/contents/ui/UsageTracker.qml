@@ -174,7 +174,7 @@ Item {
                 _modelData = parsed.models || {};
                 _timeSeries = parsed.timeSeries || [];
                 _lastReset = parsed.lastReset || "";
-            } catch (e) {}
+            } catch (e) { console.warn("[UsageTracker] Failed to parse usage data:", e); }
         }
         _updateProperties();
     }

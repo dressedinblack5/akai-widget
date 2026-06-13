@@ -60,7 +60,7 @@ Item {
                 var data = null;
                 var err = xhr.status !== 200 && xhr.status !== 201 && xhr.status !== 204;
                 if (xhr.responseText) {
-                    try { data = JSON.parse(xhr.responseText); } catch (e) {}
+                    try { data = JSON.parse(xhr.responseText); } catch (e) { console.warn("[ConnectionManager] Failed to parse response:", e); }
                 }
                 callback(err, data, xhr.status);
             }
@@ -282,7 +282,7 @@ Item {
                     try {
                         var ev = JSON.parse(lines[i].substring(6));
                         root.sseEventReceived(ev.type, ev.payload || {});
-                    } catch (e) {}
+                    } catch (e) { console.warn("[ConnectionManager] Failed to parse SSE event:", e); }
                 }
             }
 

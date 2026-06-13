@@ -109,7 +109,7 @@ PlasmoidItem {
                 for (var i = start; i < msgs.length; i++) {
                     messageModel.append(msgs[i]);
                 }
-            } catch (e) {}
+            } catch (e) { console.warn("[main] Failed to parse saved messages:", e); }
         }
     }
 
@@ -156,6 +156,7 @@ PlasmoidItem {
         readonly property color themeGreen: "#4CAF50"
         readonly property color themeRed: "#F44336"
         readonly property color themeOrange: "#FFA726"
+        property bool _confirmClear: false
 
         ColumnLayout {
             anchors.fill: parent
@@ -292,17 +293,17 @@ PlasmoidItem {
 
                     Rectangle {
                         id: clearBtn
-                        implicitWidth: 24
+                        implicitWidth: _confirmClear ? 52 : 24
                         implicitHeight: 24
                         radius: 4
                         visible: messageModel.count > 0
-                        color: clearMouse.containsMouse ? Qt.darker(popupOuter.themeRed, 1.1) : "transparent"
+                        color: _confirmClear ? Qt.darker(popupOuter.themeRed, 1.1) : (clearMouse.containsMouse ? Qt.darker(popupOuter.themeRed, 1.1) : "transparent")
 
                         Label {
                             anchors.centerIn: parent
-                            text: "\u2715"
-                            color: clearMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText
-                            font.pixelSize: 14
+                            text: _confirmClear ? "Clear?" : "\u2715"
+                            color: _confirmClear ? "#ffffff" : (clearMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText)
+                            font.pixelSize: _confirmClear ? 11 : 14
                         }
 
                         MouseArea {
@@ -310,16 +311,32 @@ PlasmoidItem {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: engine.resetChat()
+                            onClicked: {
+                                if (_confirmClear) {
+                                    _confirmClear = false;
+                                    _clearConfirmTimer.stop();
+                                    engine.resetChat();
+                                } else {
+                                    _confirmClear = true;
+                                    _clearConfirmTimer.start();
+                                }
+                            }
                         }
 
                         ToolTip {
-                            visible: clearMouse.containsMouse
+                            visible: clearMouse.containsMouse && !_confirmClear
                             text: "Clear chat history"
                             delay: 500
                         }
                     }
                 }
+            }
+
+            Timer {
+                id: _clearConfirmTimer
+                interval: 3000
+                repeat: false
+                onTriggered: popupOuter._confirmClear = false
             }
 
             Item {
