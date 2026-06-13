@@ -60,6 +60,8 @@ Item {
 
     function checkHealth() {
         engine.connectionStatus = 0;
+        if (engine.processManager && !engine.processManager.serverRunning)
+            engine.processManager.startServer();
         engine.httpRequest("GET", "/global/health", null, function(error, data, status) {
             if (!error && data && (data.healthy || data.status === "ok")) {
                 engine.connectionStatus = 1;
@@ -407,8 +409,6 @@ Item {
                     engine.sseXhr = null;
                     engine.sseBuffer = "";
                 }
-                if (engine.processManager && engine.processManager.serverRunning)
-                    engine.processManager.stopServer();
             }
         }
     }
