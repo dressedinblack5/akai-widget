@@ -213,6 +213,15 @@ Item {
                 }
             }
         }
+        var fallbackModels = ["opencode-go/deepseek-v4-flash", "opencode-go/qwen3.7-plus", "google/gemini-2.5-flash"];
+        for (var fi = 0; fi < fallbackModels.length; fi++) {
+            for (var mi = 0; mi < models.length; mi++) {
+                if (models[mi].value === fallbackModels[fi]) {
+                    engine.modelSelectorRef.selectModel(fallbackModels[fi]);
+                    return;
+                }
+            }
+        }
         engine.modelSelectorRef.selectModel(models[0].value);
     }
 

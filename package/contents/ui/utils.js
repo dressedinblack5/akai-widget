@@ -41,9 +41,11 @@ function buildModelList(data, recentValues) {
 function buildModelListFromConfig(data, recentValues) {
     var allModels = [];
     var providers = data.providers || {};
+    var connectedFilter = Array.isArray(data.connected) ? data.connected : null;
 
     for (var pid in providers) {
         if (!providers.hasOwnProperty(pid)) continue;
+        if (connectedFilter && connectedFilter.indexOf(pid) === -1) continue;
         var p = providers[pid];
         var name = p.name || pid;
         var pModels = p.models || {};
