@@ -233,31 +233,30 @@ PlasmoidItem {
                     }
 
                     Rectangle {
-                        id: clearBtn
+                        id: pasteBtn
                         implicitWidth: 24
                         implicitHeight: 24
                         radius: 4
-                        visible: messageModel.count > 0
-                        color: clearMouse.containsMouse ? Qt.darker(popupOuter.themeRed, 1.1) : "transparent"
+                        color: pasteMouse.containsMouse ? Qt.darker(popupOuter.themeHighlight, 1.1) : "transparent"
 
                         Label {
                             anchors.centerIn: parent
-                            text: "\u2715"
-                            color: clearMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText
+                            text: "\u2398"
+                            color: pasteMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText
                             font.pixelSize: 14
                         }
 
                         MouseArea {
-                            id: clearMouse
+                            id: pasteMouse
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: engine.resetChat()
+                            onClicked: inputBar.pasteFromClipboard()
                         }
 
                         ToolTip {
-                            visible: clearMouse.containsMouse
-                            text: "Clear chat history"
+                            visible: pasteMouse.containsMouse
+                            text: "Paste to input"
                             delay: 500
                         }
                     }
@@ -292,30 +291,31 @@ PlasmoidItem {
                     }
 
                     Rectangle {
-                        id: pasteBtn
+                        id: clearBtn
                         implicitWidth: 24
                         implicitHeight: 24
                         radius: 4
-                        color: pasteMouse.containsMouse ? Qt.darker(popupOuter.themeHighlight, 1.1) : "transparent"
+                        visible: messageModel.count > 0
+                        color: clearMouse.containsMouse ? Qt.darker(popupOuter.themeRed, 1.1) : "transparent"
 
                         Label {
                             anchors.centerIn: parent
-                            text: "\u2398"
-                            color: pasteMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText
+                            text: "\u2715"
+                            color: clearMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText
                             font.pixelSize: 14
                         }
 
                         MouseArea {
-                            id: pasteMouse
+                            id: clearMouse
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: inputBar.pasteFromClipboard()
+                            onClicked: engine.resetChat()
                         }
 
                         ToolTip {
-                            visible: pasteMouse.containsMouse
-                            text: "Paste to input"
+                            visible: clearMouse.containsMouse
+                            text: "Clear chat history"
                             delay: 500
                         }
                     }
