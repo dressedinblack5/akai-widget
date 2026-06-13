@@ -244,6 +244,19 @@ Item {
             console.log("[ChatEngine] sendMessage: blocked, already loading");
             return;
         }
+
+        // F1 — Model guard: prevent entering stuck loading state with no model selected
+        if (!engine.selectedModelId) {
+            if (engine.availableModels && engine.availableModels.length > 0) {
+                engine.selectDefaultModel();
+            }
+            if (!engine.selectedModelId) {
+                console.log("[ChatEngine] sendMessage: no model selected");
+                engine.addMessage("assistant", "Error: No model selected. Select a model from the dropdown or wait for providers to load.");
+                return;
+            }
+        }
+
         engine.loading = true;
 
         function doSend() {
@@ -589,13 +602,9 @@ Item {
             console.log("[ChatEngine] Poll tick", engine._pollCount, "loading:", engine.loading);
 
             engine.stallCount++;
-            if (engine.stallCount >= 40) {
-                engine.stallCount = 0;
-                engine.loading = false;
-                responseTimeoutTimer.stop();
-                fallbackPollerTimer.stop();
-                if (engine.usageTracker) engine.usageTracker.endRequest(false);
-                engine.addMessage("assistant", "No response from " + engine.selectedModelName + " (timeout after 60s).");
+            // F2 — After 10 ticks (~15s), do one final poll with isFinal=true to report error
+            if (engine.stallCount >= 10) {
+                engine.pollForResponse(true);
                 return;
             }
 
@@ -605,7 +614,7 @@ Item {
 
     Timer {
         id: responseTimeoutTimer
-        interval: 60000
+        interval: 20000
         repeat: false
         onTriggered: {
             if (engine.loading) {
@@ -613,7 +622,7 @@ Item {
                 fallbackPollerTimer.stop();
                 engine.stallCount = 0;
                 if (engine.usageTracker) engine.usageTracker.endRequest(false);
-                engine.addMessage("assistant", "No response from " + engine.selectedModelName + " (60s timeout). Try a different model.");
+                engine.addMessage("assistant", "No response from " + engine.selectedModelName + " (timeout). Try a different model.");
             }
         }
     }
