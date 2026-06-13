@@ -19,7 +19,6 @@ RowLayout {
     readonly property color ibSendBg: Qt.darker(sysPal.highlight, 1.5)
 
     signal send(string text)
-    signal newChat()
     signal stopRequested()
 
     function pasteFromClipboard() {

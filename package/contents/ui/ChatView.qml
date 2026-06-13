@@ -40,7 +40,7 @@ ScrollView {
         }
 
         onContentHeightChanged: {
-            if (root.loading && !_userScrolledUp)
+            if (!_userScrolledUp)
                 Qt.callLater(positionViewAtEnd);
         }
 
