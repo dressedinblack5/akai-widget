@@ -474,7 +474,6 @@ PlasmoidItem {
                 loading: engine.loading
 
                 onSend: function(text) { engine.sendMessage(text); }
-                onNewChat: engine.resetChat()
                 onStopRequested: engine.stopGeneration()
             }
         }

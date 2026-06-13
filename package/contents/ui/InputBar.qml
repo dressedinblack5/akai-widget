@@ -110,20 +110,27 @@ RowLayout {
     }
 
     Button {
-        id: newChatBtn
+        id: pasteBtn
 
         implicitWidth: 34
         implicitHeight: 34
-        text: "\u21BA"
-        onClicked: root.newChat()
+        visible: root.enabled
+        text: "\u2398"
+        onClicked: inputField.paste()
+
+        ToolTip {
+            visible: pasteBtn.hovered
+            text: "Paste from clipboard"
+            delay: 300
+        }
 
         background: Rectangle {
-            color: newChatBtn.hovered ? Qt.lighter(root.ibBg, 1.05) : Qt.darker(root.ibBg, 1.5)
+            color: pasteBtn.hovered ? Qt.lighter(root.ibBg, 1.05) : Qt.darker(root.ibBg, 1.5)
             radius: 4
         }
 
         contentItem: Label {
-            text: newChatBtn.text
+            text: pasteBtn.text
             color: Qt.darker(root.ibText, 1.3)
             font.pixelSize: 16
             horizontalAlignment: Text.AlignHCenter
