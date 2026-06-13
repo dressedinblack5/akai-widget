@@ -20,6 +20,7 @@ PlasmoidItem {
     property bool showUsage: false
     readonly property int maxMessages: 200
     readonly property int lazyLoadCount: 50
+    property string connectionErrorMsg: ""
 
     ChatEngine {
         id: engine
@@ -45,8 +46,13 @@ PlasmoidItem {
         serverUrl: engine.serverUrl
         processManager: processManager
 
-        onServerReady: engine.fetchProviders()
-        onConnectionError: function(msg) { engine.addMessage("assistant", msg); }
+        onServerReady: {
+            root.connectionErrorMsg = "";
+            engine.fetchProviders();
+        }
+        onConnectionError: function(msg) {
+            root.connectionErrorMsg = msg;
+        }
     }
 
     ProcessManager {
@@ -306,13 +312,15 @@ PlasmoidItem {
 
                     ColumnLayout {
                         anchors.centerIn: parent
-                        spacing: 8
+                        spacing: 12
+                        width: Math.min(parent.width - 32, 400)
 
                         Label {
                             Layout.alignment: Qt.AlignHCenter
                             text: connectionManager.isConnecting ? "Connecting\u2026" : "Server offline"
                             color: connectionManager.isConnecting ? popupOuter.themeOrange : popupOuter.themeRed
-                            font.pixelSize: 14
+                            font.pixelSize: 16
+                            font.bold: true
                             opacity: connectionManager.isConnecting ? 0.4 : 1.0
 
                             SequentialAnimation on opacity {
@@ -340,22 +348,56 @@ PlasmoidItem {
                             }
                         }
 
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: errorText.implicitHeight + 24
+                            visible: root.connectionErrorMsg.length > 0 && !connectionManager.isConnecting
+                            color: Qt.rgba(popupOuter.themeRed.r, popupOuter.themeRed.g, popupOuter.themeRed.b, 0.1)
+                            border.color: Qt.rgba(popupOuter.themeRed.r, popupOuter.themeRed.g, popupOuter.themeRed.b, 0.3)
+                            border.width: 1
+                            radius: 4
+
+                            Label {
+                                id: errorText
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                text: root.connectionErrorMsg
+                                color: popupOuter.themeRed
+                                font.pixelSize: 12
+                                wrapMode: Text.WordWrap
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                        }
+
+                        Label {
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.fillWidth: true
+                            visible: !connectionManager.isConnecting && !connectionManager.serverRunning
+                            text: "The Opencode server is not running. Click Start to launch it."
+                            color: popupOuter.themeText
+                            font.pixelSize: 11
+                            opacity: 0.7
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
                         Row {
                             Layout.alignment: Qt.AlignHCenter
                             visible: !connectionManager.isReady
                             spacing: 8
 
                             Rectangle {
-                                width: 28
-                                height: 28
+                                width: 80
+                                height: 32
                                 radius: 4
                                 color: srvStartBtn.containsMouse ? popupOuter.themeGreen : Qt.darker(popupOuter.themeGreen, 1.1)
 
                                 Label {
                                     anchors.centerIn: parent
-                                    text: connectionManager.serverRunning ? "\u21BB" : "\u25B6"
+                                    text: connectionManager.serverRunning ? "\u21BB Restart" : "\u25B6 Start"
                                     color: "white"
-                                    font.pixelSize: 13
+                                    font.pixelSize: 12
+                                    font.bold: true
                                 }
 
                                 MouseArea {
@@ -364,6 +406,7 @@ PlasmoidItem {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
+                                        root.connectionErrorMsg = "";
                                         if (connectionManager.serverRunning)
                                             connectionManager.restart();
                                         else
@@ -379,17 +422,18 @@ PlasmoidItem {
                             }
 
                             Rectangle {
-                                width: 28
-                                height: 28
+                                width: 80
+                                height: 32
                                 radius: 4
                                 visible: connectionManager.serverRunning
                                 color: srvStopBtn.containsMouse ? Qt.darker(popupOuter.themeRed, 1.1) : popupOuter.themeRed
 
                                 Label {
                                     anchors.centerIn: parent
-                                    text: "\u25A0"
+                                    text: "\u25A0 Stop"
                                     color: popupOuter.themeHighlightedText
-                                    font.pixelSize: 13
+                                    font.pixelSize: 12
+                                    font.bold: true
                                 }
 
                                 MouseArea {
