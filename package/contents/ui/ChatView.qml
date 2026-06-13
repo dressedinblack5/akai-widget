@@ -44,11 +44,6 @@ ScrollView {
                 Qt.callLater(positionViewAtEnd);
         }
 
-        Component.onCompleted: {
-            if (count > 0)
-                Qt.callLater(positionViewAtEnd);
-        }
-
         delegate: MessageBubble {
             width: listView.width - 8
             role: model.role
