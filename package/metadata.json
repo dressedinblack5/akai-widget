@@ -2,7 +2,7 @@
     "KPackageStructure": "Plasma/Applet",
     "KPlugin": {
         "Id": "akai-widget",
-        "Name": "AKAI Widget",
+        "Name": "akai-widget",
         "Description": "Chatbot widget powered by Opencode",
         "Icon": "dialog-messages",
         "Version": "1.0",
