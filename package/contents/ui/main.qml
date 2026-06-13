@@ -17,7 +17,6 @@ PlasmoidItem {
     Plasmoid.backgroundHints: PlasmaCore.Types.StandardBackground
     Plasmoid.icon: "dialog-messages"
 
-    property bool showUsage: false
     readonly property int maxMessages: 200
     readonly property int lazyLoadCount: 50
     property string connectionErrorMsg: ""
@@ -28,7 +27,6 @@ PlasmoidItem {
         serverUrl: "http://" + (plasmoid.configuration.serverHost || "localhost") + ":" + (plasmoid.configuration.serverPort || 4096)
         messageModel: messageModel
         connectionManager: connectionManager
-        usageTracker: usageTracker
         savedModel: plasmoid.configuration.lastModel || ""
 
         onMessageAdded: _saveTimer.restart()
@@ -67,11 +65,6 @@ PlasmoidItem {
 
     StorageHelper {
         id: storage
-    }
-
-    UsageTracker {
-        id: usageTracker
-        storage: storage
     }
 
     ListModel {
@@ -263,35 +256,6 @@ PlasmoidItem {
                     }
 
                     Rectangle {
-                        id: usageBtn
-                        implicitWidth: 24
-                        implicitHeight: 24
-                        radius: 4
-                        color: usageMouse.containsMouse ? Qt.darker(popupOuter.themeHighlight, 1.1) : (root.showUsage ? popupOuter.themeHighlight : "transparent")
-
-                        Label {
-                            anchors.centerIn: parent
-                            text: "\u2607"
-                            color: root.showUsage ? popupOuter.themeHighlightedText : (usageMouse.containsMouse ? popupOuter.themeHighlightedText : popupOuter.themeText)
-                            font.pixelSize: 14
-                        }
-
-                        MouseArea {
-                            id: usageMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.showUsage = !root.showUsage
-                        }
-
-                        ToolTip {
-                            visible: usageMouse.containsMouse
-                            text: root.showUsage ? "Back to chat" : "Usage statistics"
-                            delay: 500
-                        }
-                    }
-
-                    Rectangle {
                         id: clearBtn
                         implicitWidth: _confirmClear ? 52 : 24
                         implicitHeight: 24
@@ -345,7 +309,7 @@ PlasmoidItem {
 
                 ChatView {
                     anchors.fill: parent
-                    visible: !root.showUsage && connectionManager.isReady
+                    visible: connectionManager.isReady
                     messages: messageModel
                     loading: engine.loading
                     loadingText: engine.selectedModelName ? "Thinking with " + engine.selectedModelName : "Thinking"
@@ -353,7 +317,7 @@ PlasmoidItem {
 
                 Item {
                     anchors.fill: parent
-                    visible: !root.showUsage && !connectionManager.isReady
+                    visible: !connectionManager.isReady
 
                     ColumnLayout {
                         anchors.centerIn: parent
@@ -499,24 +463,12 @@ PlasmoidItem {
                     }
                 }
 
-                UsageDashboard {
-                    anchors.fill: parent
-                    visible: root.showUsage
-                    usageTracker: usageTracker
-                    themeBg: popupOuter.themeBg
-                    themeText: popupOuter.themeText
-                    themeMuted: Qt.darker(popupOuter.themeText, 1.5)
-                    themeAccent: popupOuter.themeHighlight
-
-                    onCloseRequested: root.showUsage = false
-                }
             }
 
             InputBar {
                 id: inputBar
                 Layout.fillWidth: true
                 Layout.rightMargin: 16
-                visible: !root.showUsage
                 enabled: connectionManager.isReady
                 loading: engine.loading
 
