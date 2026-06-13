@@ -43,10 +43,6 @@ Item {
         xhr.timeout = timeout || 8000;
         if (body)
             xhr.setRequestHeader("Content-Type", "application/json");
-        var safeCallback = function(error, data, status) {
-            if (!engine) return;
-            callback(error, data, status);
-        };
         xhr.onreadystatechange = function() {
             if (xhr.readyState === XMLHttpRequest.DONE) {
                 var data = null;
@@ -54,11 +50,11 @@ Item {
                 if (xhr.responseText) {
                     try { data = JSON.parse(xhr.responseText); } catch (e) {}
                 }
-                safeCallback(error, data, xhr.status);
+                callback(error, data, xhr.status);
             }
         };
-        xhr.ontimeout = function() { safeCallback(true, null, 0); };
-        xhr.onerror = function() { safeCallback(true, null, 0); };
+        xhr.ontimeout = function() { callback(true, null, 0); };
+        xhr.onerror = function() { callback(true, null, 0); };
         xhr.send(body ? JSON.stringify(body) : null);
     }
 
