@@ -1,6 +1,0 @@
-module Metering
-MeterBar 1.0 MeterBar.qml
-MeterRing 1.0 MeterRing.qml
-MeterLabel 1.0 MeterLabel.qml
-MeterPanel 1.0 MeterPanel.qml
-Sparkline 1.0 Sparkline.qml
