@@ -30,7 +30,11 @@ ScrollView {
         property bool _userScrolledUp: false
 
         onContentYChanged: {
-            if (contentHeight > height && contentY < contentHeight - height - 30)
+            if (contentHeight <= height) return;
+            var atBottom = contentY >= contentHeight - height - 30;
+            if (atBottom)
+                _userScrolledUp = false;
+            else
                 _userScrolledUp = true;
         }
 
@@ -40,7 +44,7 @@ ScrollView {
         }
 
         onCountChanged: {
-            if (count > 0)
+            if (count > 0 && !_userScrolledUp)
                 Qt.callLater(positionViewAtEnd);
         }
 
