@@ -387,4 +387,35 @@ Item {
             }
         }
     }
+
+    Connections {
+        target: engine.connectionManager
+
+        function onSseEventReceived(type, payload) {
+            if (type === "session.error") {
+                if (engine.loading) {
+                    engine.loading = false;
+                    responseTimeoutTimer.stop();
+                    fallbackPollerTimer.stop();
+                    engine.stallCount = 0;
+                }
+                var sessErr = payload.error || {};
+                var errMsg = (sessErr.data && sessErr.data.message) || sessErr.name || "Session error";
+                engine.addMessage("assistant", "Error: " + errMsg);
+                return;
+            }
+
+            if (type === "session.idle" || (type === "session.status" && payload.status && payload.status.type === "idle")) {
+                if (payload.sessionID && payload.sessionID !== engine.sessionId) return;
+                console.log("[ChatEngine] session idle, loading:", engine.loading);
+                if (engine.loading) {
+                    fallbackPollerTimer.stop();
+                    responseTimeoutTimer.stop();
+                    engine.stallCount = 0;
+                    engine.pollForResponse(true);
+                }
+                return;
+            }
+        }
+    }
 }

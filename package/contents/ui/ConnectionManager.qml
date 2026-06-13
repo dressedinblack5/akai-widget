@@ -36,6 +36,7 @@ Item {
     signal connectionStateChanged(int newState, int oldState)
     signal connectionError(string message)
     signal serverReady()
+    signal sseEventReceived(string type, var payload)
 
     function _setState(newState) {
         if (newState === root.state) return;
@@ -280,7 +281,7 @@ Item {
                 if (lines[i].indexOf("data: ") === 0) {
                     try {
                         var ev = JSON.parse(lines[i].substring(6));
-                        console.log("[ConnectionManager] SSE event:", ev.type);
+                        root.sseEventReceived(ev.type, ev.payload || {});
                     } catch (e) {}
                 }
             }
