@@ -48,7 +48,7 @@ void ProcessManager::startServer() {
 
     m_starting = true;
     m_startTimer->start();
-    m_process->start("opencode", QStringList() << "serve" << "--pure" << "--log-level" << "ERROR");
+    m_process->start("opencode", QStringList() << "serve" << "--pure" << "--log-level" << "ERROR" << "--port" << "4096");
 }
 
 void ProcessManager::stopServer() {
