@@ -60,8 +60,6 @@ Item {
 
     function checkHealth() {
         engine.connectionStatus = 0;
-        if (engine.processManager && !engine.processManager.serverRunning)
-            engine.processManager.startServer();
         engine.httpRequest("GET", "/global/health", null, function(error, data, status) {
             if (!error && data && (data.healthy || data.status === "ok")) {
                 engine.connectionStatus = 1;
@@ -236,14 +234,33 @@ Item {
             return;
         }
         engine.loading = true;
-        engine.createSession(function(success) {
-            console.log("[ChatEngine] createSession callback, success:", success);
-            if (success) engine.doSendMessage(text);
-            else {
-                engine.loading = false;
-                engine.addMessage("assistant", "Error: Could not create session. Is the server running?");
-            }
-        });
+
+        function doSend() {
+            engine.createSession(function(success) {
+                if (success) engine.doSendMessage(text);
+                else {
+                    engine.loading = false;
+                    engine.addMessage("assistant", "Error: Could not create session. Is the server running?");
+                }
+            });
+        }
+
+        if (engine.processManager && !engine.processManager.serverRunning) {
+            engine.processManager.startServer();
+            engine.httpRequest("GET", "/global/health", null, function(error, data) {
+                if (!error && data && (data.healthy || data.status === "ok")) {
+                    engine.connectionStatus = 1;
+                    engine.connectSSE();
+                    engine.fetchProviders();
+                    doSend();
+                } else {
+                    engine.loading = false;
+                    engine.addMessage("assistant", "Starting server... Retry in a moment.");
+                }
+            }, 5000);
+        } else {
+            doSend();
+        }
     }
 
     function buildHistory() {
@@ -387,6 +404,8 @@ Item {
                     engine.sseXhr = null;
                     engine.sseBuffer = "";
                 }
+                if (engine.processManager && engine.processManager.serverRunning)
+                    engine.processManager.stopServer();
             }
         }
     }
