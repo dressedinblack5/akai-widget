@@ -18,6 +18,8 @@ PlasmoidItem {
     Plasmoid.icon: "dialog-messages"
 
     property bool showUsage: false
+    readonly property int maxMessages: 200
+    readonly property int lazyLoadCount: 50
 
     ChatEngine {
         id: engine
@@ -28,7 +30,14 @@ PlasmoidItem {
         usageTracker: usageTracker
         savedModel: plasmoid.configuration.lastModel || ""
 
-        onMessageAdded: saveMessages()
+        onMessageAdded: _saveTimer.restart()
+
+    Timer {
+        id: _saveTimer
+        interval: 2000
+        repeat: false
+        onTriggered: saveMessages()
+    }
     }
 
     ConnectionManager {
@@ -69,6 +78,10 @@ PlasmoidItem {
     }
 
     function saveMessages() {
+        // Trim old messages if exceeding cap
+        while (messageModel.count > root.maxMessages) {
+            messageModel.remove(0);
+        }
         var arr = [];
         for (var i = 0; i < messageModel.count; i++) {
             arr.push({
@@ -85,7 +98,9 @@ PlasmoidItem {
         if (data) {
             try {
                 var msgs = JSON.parse(data);
-                for (var i = 0; i < msgs.length; i++) {
+                // Lazy-load: only the last N messages
+                var start = Math.max(0, msgs.length - root.lazyLoadCount);
+                for (var i = start; i < msgs.length; i++) {
                     messageModel.append(msgs[i]);
                 }
             } catch (e) {}
@@ -188,6 +203,7 @@ PlasmoidItem {
 
                         Layout.fillWidth: true
                         models: engine.availableModels
+                        missingProviders: engine.missingProviders
                         enabled: connectionManager.isReady
 
                         Component.onCompleted: {

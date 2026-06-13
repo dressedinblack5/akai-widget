@@ -7,6 +7,7 @@ RowLayout {
     id: root
 
     property var models: []
+    property var missingProviders: []
     property string selectedModelId: ""
     property bool _suppressSignal: false
 
@@ -66,6 +67,24 @@ RowLayout {
 
         model: ListModel {
             id: listModel
+        }
+    }
+
+    Label {
+        visible: root.missingProviders.length > 0
+        text: "\u26A0"
+        color: "#FFA726"
+        font.pixelSize: 14
+
+        HoverHandler {
+            id: missingHover
+            cursorShape: Qt.PointingHandCursor
+        }
+
+        ToolTip {
+            visible: missingHover.hovered
+            text: "Some providers unavailable:\n" + root.missingProviders.join(", ") + "\n\nEnsure Ollama is running or API keys are configured."
+            delay: 300
         }
     }
 

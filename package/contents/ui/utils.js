@@ -1,3 +1,32 @@
+function findMissingProviders(data) {
+    var all = [];
+    var connected = null;
+
+    if (data && data.all && Array.isArray(data.all)) {
+        all = data.all;
+        connected = Array.isArray(data.connected) ? data.connected : null;
+    } else if (data && data.providers) {
+        for (var pid in data.providers) {
+            if (data.providers.hasOwnProperty(pid)) {
+                all.push({ id: pid, name: data.providers[pid].name || pid, enabled: data.providers[pid].enabled !== false });
+            }
+        }
+        connected = Array.isArray(data.connected) ? data.connected : null;
+    }
+
+    if (!connected || all.length === 0) return [];
+
+    var missing = [];
+    for (var i = 0; i < all.length; i++) {
+        var p = all[i];
+        if (!p.id || p.enabled === false) continue;
+        if (connected.indexOf(p.id) === -1) {
+            missing.push(p.name || p.id);
+        }
+    }
+    return missing;
+}
+
 function buildModelList(data, recentValues) {
     var allModels = [];
     var list = [];

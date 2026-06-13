@@ -27,13 +27,6 @@ Rectangle {
     property int _summaryAvgMs: 0
     property var _sparklineData: []
 
-    Timer {
-        interval: 2000
-        running: root.visible
-        repeat: true
-        onTriggered: refreshData()
-    }
-
     Component.onCompleted: refreshData()
 
     Connections {

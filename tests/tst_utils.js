@@ -11,7 +11,7 @@ const ctx = {};
 vm.createContext(ctx);
 vm.runInContext(utilsCode, ctx);
 
-const { buildModelList, buildModelListFromConfig } = ctx;
+const { buildModelList, buildModelListFromConfig, findMissingProviders } = ctx;
 
 let passed = 0;
 let failed = 0;
@@ -130,6 +130,40 @@ assertEq(manyRecent[0].value, "ollama/llama3", "multiple recent: first recent fi
 assertEq(manyRecent[1].value, "opencode-go/gpt-4o", "multiple recent: second recent second");
 assertEq(manyRecent[2].value, "opencode-go/claude-sonnet", "multiple recent: third recent third");
 assertEq(manyRecent.length, 3, "multiple recent: no duplicates");
+
+const missingData = {
+  all: [
+    { id: "opencode-go", name: "Opencode", enabled: true, models: {} },
+    { id: "ollama", name: "Ollama", enabled: true, models: {} },
+    { id: "google", name: "Google", enabled: true, models: {} },
+  ],
+  connected: ["opencode-go"],
+};
+const missing = findMissingProviders(missingData);
+assertEq(missing.length, 2, "missing: 2 providers not connected");
+assert(missing.indexOf("Ollama") >= 0, "missing: includes Ollama");
+assert(missing.indexOf("Google") >= 0, "missing: includes Google");
+
+const allConnected = findMissingProviders({
+  all: [{ id: "p1", name: "P1", enabled: true, models: {} }],
+  connected: ["p1"],
+});
+assertEq(allConnected.length, 0, "missing: empty when all connected");
+
+const noConnected = findMissingProviders({
+  all: [{ id: "p1", name: "P1", enabled: true, models: {} }],
+});
+assertEq(noConnected.length, 0, "missing: empty when no connected filter");
+
+const configMissing = findMissingProviders({
+  providers: {
+    "opencode-go": { name: "Opencode", models: {} },
+    ollama: { name: "Ollama", models: {} },
+  },
+  connected: ["opencode-go"],
+});
+assertEq(configMissing.length, 1, "missing config: 1 provider missing");
+assert(configMissing[0] === "Ollama", "missing config: identifies Ollama");
 
 console.log("\n" + passed + " passed, " + failed + " failed");
 process.exit(failed > 0 ? 1 : 0);
