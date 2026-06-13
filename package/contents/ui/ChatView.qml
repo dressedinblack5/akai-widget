@@ -19,6 +19,7 @@ ScrollView {
     readonly property color bubbleTime: dimText
 
     clip: true
+    ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
     ListView {
         id: listView
